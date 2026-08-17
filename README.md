@@ -71,17 +71,56 @@ cargo check --workspace                    # ✗ needs libwebkit2gtk-4.1-dev
 CI covers the shell on both `ubuntu-latest` (with the apt packages) and
 `windows-latest`.
 
-## Building the Windows installer
+## Running on Windows
 
-Needs Rust and the Tauri prerequisites on a Windows machine:
+### Prerequisites
 
-```bash
+| | |
+|---|---|
+| [Node.js 22 LTS](https://nodejs.org) | then `corepack enable` to get pnpm |
+| [Rust](https://rustup.rs) (stable, MSVC toolchain) | rustup's default on Windows |
+| [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) | tick **Desktop development with C++** |
+| WebView2 | already present on Windows 10 1803+ and Windows 11 |
+
+### Run it
+
+```powershell
+git clone https://github.com/enadot/yanuka-db.git
+cd yanuka-db
+pnpm install
+
+pnpm --filter @yanuka/desktop tauri dev     # the real desktop app, live SQLite
+```
+
+The first `tauri dev` compiles SQLite and the Rust dependencies and takes
+several minutes; afterwards it is incremental.
+
+### Build the installer
+
+```powershell
 pnpm --filter @yanuka/desktop tauri build
 ```
 
-The NSIS output lands in `target/release/bundle/nsis/`; CI copies it to
-`ContactsSetup.exe`. The installer is **unsigned**, so SmartScreen warns on
-first run — see `docs/DECISIONS.md` ADR-021.
+The NSIS output lands in `target\release\bundle\nsis\`; CI copies it to
+`ContactsSetup.exe`. The installer is **unsigned**, so SmartScreen shows
+"Windows protected your PC" on first run — *More info* → *Run anyway*. See
+`docs/DECISIONS.md` ADR-021.
+
+### Where the data lives
+
+`%APPDATA%\digital.baram.yanuka\contacts.db`, with pre-migration backups
+beside it in `backups\`. Deleting that file resets the application to empty.
+
+### No Rust installed?
+
+The whole UI runs in a browser against the in-memory repository and the demo
+data — no Rust, no Tauri, nothing to compile:
+
+```powershell
+pnpm --filter @yanuka/desktop dev
+```
+
+Changes are not saved between runs; everything else behaves identically.
 
 ## The design rules worth knowing before editing
 
