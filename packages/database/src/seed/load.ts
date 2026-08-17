@@ -11,6 +11,7 @@ import type {
   Tag,
   Ulid,
 } from '@yanuka/types';
+import { normalizePhone } from '@yanuka/utils';
 import { SEED_DATASET } from './dataset.js';
 import type { SeedContact, SeedDataset } from './types.js';
 
@@ -132,20 +133,25 @@ export function loadSeed(dataset: SeedDataset = SEED_DATASET): LoadedSeed {
     const id = contactIdByKey.get(seed.key)!;
     const base = envelope(id);
 
-    const phones: ContactPhone[] = (seed.phones ?? []).map((phone, index) => ({
-      ...envelope(deterministicId(`phone:${seed.key}:${index}`)),
-      contactId: id,
-      kind: phone.kind,
-      raw: phone.raw,
-      // The seed stores what was written down. E.164 and the digit key are
-      // computed by the repository on load, exactly as they are for real input,
-      // so unparseable historical numbers behave identically here.
-      e164: null,
-      digits: phone.raw.replace(/\D+/g, ''),
-      countryCode: seed.country ?? null,
-      isPrimary: phone.isPrimary ?? index === 0,
-      label: phone.label ?? null,
-    }));
+    const phones: ContactPhone[] = (seed.phones ?? []).map((phone, index) => {
+      // The seed stores what was written down, then runs it through the very
+      // same normalizer a typed-in number goes through. Two of the fixtures are
+      // deliberately unparseable, and they must degrade here exactly as they
+      // would in the form — otherwise the demo data would be easier than
+      // reality and would hide bugs.
+      const normalized = normalizePhone(phone.raw, seed.country ?? null);
+      return {
+        ...envelope(deterministicId(`phone:${seed.key}:${index}`)),
+        contactId: id,
+        kind: phone.kind,
+        raw: normalized.raw,
+        e164: normalized.e164,
+        digits: normalized.digits,
+        countryCode: normalized.countryCode ?? seed.country ?? null,
+        isPrimary: phone.isPrimary ?? index === 0,
+        label: phone.label ?? null,
+      };
+    });
 
     const emails: ContactEmail[] = (seed.emails ?? []).map((email, index) => ({
       ...envelope(deterministicId(`email:${seed.key}:${index}`)),
@@ -173,24 +179,23 @@ export function loadSeed(dataset: SeedDataset = SEED_DATASET): LoadedSeed {
       .map((name) => categoryByName.get(normalizeKey(name)))
       .filter((category): category is Category => category != null);
 
-    const organizationLinks: Array<ContactOrganization & { organization: Organization }> = (
-      seed.organizations ?? []
-    )
-      .map((link, index) => {
-        const organization = orgByKey.get(link.key);
-        if (!organization) return null;
-        return {
-          ...envelope(deterministicId(`contactorg:${seed.key}:${index}`)),
-          contactId: id,
-          organizationId: organization.id,
-          role: link.role ?? null,
-          isPrimary: link.isPrimary ?? index === 0,
-          startedAt: null,
-          endedAt: null,
-          organization,
-        };
-      })
-      .filter((link): link is ContactOrganization & { organization: Organization } => link != null);
+    const organizationLinks: Array<ContactOrganization & { organization: Organization }> = [];
+    (seed.organizations ?? []).forEach((link, index) => {
+      const organization = orgByKey.get(link.key);
+      // A dangling organization key means the dataset references one that was
+      // renamed. The seed test asserts none exist; skipping keeps it loadable.
+      if (!organization) return;
+      organizationLinks.push({
+        ...envelope(deterministicId(`contactorg:${seed.key}:${index}`)),
+        contactId: id,
+        organizationId: organization.id,
+        role: link.role ?? null,
+        isPrimary: link.isPrimary ?? index === 0,
+        startedAt: null,
+        endedAt: null,
+        organization,
+      });
+    });
 
     const contact: ContactWithRelations = {
       ...base,

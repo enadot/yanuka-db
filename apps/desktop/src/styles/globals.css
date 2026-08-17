@@ -1,0 +1,12 @@
+/*
+ * The design tokens, RTL rules and Hebrew typography live in @yanuka/ui so the
+ * future web client inherits them unchanged.
+ *
+ * Tailwind v4 discovers classes by scanning source files, and it only scans
+ * what it is pointed at. `@source` for the app's own `src` is required here
+ * because the import above resolves inside node_modules, from which Tailwind
+ * will not walk back out into this package.
+ */
+@import '@yanuka/ui/globals.css';
+
+@source "../";

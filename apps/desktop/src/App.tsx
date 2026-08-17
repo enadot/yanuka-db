@@ -1,0 +1,22 @@
+import { Route, Routes } from 'react-router-dom';
+import { AppLayout } from './components/layout/app-layout';
+import { HomeScreen } from './screens/home-screen';
+import { ContactListScreen } from './screens/contact-list-screen';
+import { ContactDetailScreen } from './screens/contact-detail-screen';
+import { ContactEditScreen } from './screens/contact-edit-screen';
+import { SettingsScreen } from './screens/settings-screen';
+
+export function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<HomeScreen />} />
+        <Route path="contacts" element={<ContactListScreen />} />
+        <Route path="contacts/new" element={<ContactEditScreen mode="create" />} />
+        <Route path="contacts/:id" element={<ContactDetailScreen />} />
+        <Route path="contacts/:id/edit" element={<ContactEditScreen mode="edit" />} />
+        <Route path="settings" element={<SettingsScreen />} />
+      </Route>
+    </Routes>
+  );
+}

@@ -2,7 +2,7 @@
   "name": "yanuka-db",
   "private": true,
   "version": "0.1.0",
-  "description": "Offline-first smart contacts database — desktop, web and mobile",
+  "description": "Offline-first smart contacts database \u2014 desktop, web and mobile",
   "packageManager": "pnpm@10.33.0",
   "engines": {
     "node": ">=22"
@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@yanuka/config": "workspace:*",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",

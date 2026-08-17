@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  dir="rtl" and lang="he" are set on the document, not toggled at runtime:
+  this application is Hebrew-first and RTL is its default, not a mode.
+  Radix additionally needs its own DirectionProvider — see src/main.tsx.
+-->
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>מאגר הקשרים</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

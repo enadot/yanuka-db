@@ -9,13 +9,15 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "clean": "rimraf dist .turbo"
+    "clean": "rimraf dist .turbo",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.90.5",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
@@ -27,12 +29,18 @@
     "@yanuka/ui": "workspace:*",
     "@yanuka/utils": "workspace:*",
     "@yanuka/validation": "workspace:*",
+    "lucide-react": "^0.556.0",
+    "radix-ui": "^1.6.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-hook-form": "^7.85.0",
     "react-router-dom": "^7.9.6",
+    "sonner": "^2.0.8",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/vite": "^4.1.18",
     "@tauri-apps/cli": "^2.9.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.4",
@@ -43,7 +51,6 @@
     "eslint-plugin-react-refresh": "^0.4.24",
     "rimraf": "^6.0.1",
     "tailwindcss": "^4.1.18",
-    "@tailwindcss/vite": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "vitest": "^3.2.4"

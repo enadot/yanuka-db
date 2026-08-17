@@ -25,7 +25,8 @@
     "clean": "rimraf dist .turbo src/generated"
   },
   "dependencies": {
-    "@yanuka/types": "workspace:*"
+    "@yanuka/types": "workspace:*",
+    "@yanuka/utils": "workspace:*"
   },
   "devDependencies": {
     "@yanuka/config": "workspace:*",

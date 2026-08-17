@@ -1,4 +1,4 @@
-import { similarity, snippetAroundNormalized, tokenize } from '@yanuka/utils';
+import { COUNTRY_NAMES_HE, LANGUAGE_NAMES_HE, similarity, snippetAroundNormalized, tokenize } from '@yanuka/utils';
 import type {
   ContactSummary,
   FacetField,
@@ -251,24 +251,13 @@ function matchesFieldFilters(entry: IndexedRecord, parsed: ParsedQuery): boolean
   });
 }
 
+/**
+ * Display names for coded facet values. Shared with the UI via @yanuka/utils so
+ * `IL` reads as `ישראל` everywhere it appears, not just in the filter panel.
+ */
 const FACET_LABELS: Partial<Record<FacetField, Record<string, string>>> = {
-  country: {
-    IL: 'ישראל',
-    US: 'ארצות הברית',
-    GB: 'אנגליה',
-    FR: 'צרפת',
-    BE: 'בלגיה',
-    CA: 'קנדה',
-    AU: 'אוסטרליה',
-    AR: 'ארגנטינה',
-    RU: 'רוסיה',
-    UA: 'אוקראינה',
-    CH: 'שווייץ',
-    ZA: 'דרום אפריקה',
-    BR: 'ברזיל',
-    MX: 'מקסיקו',
-    IT: 'איטליה',
-  },
+  country: COUNTRY_NAMES_HE,
+  language: LANGUAGE_NAMES_HE,
 };
 
 function computeFacets(records: SearchableRecord[], limitPerField = 12): Facets {

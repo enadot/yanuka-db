@@ -1,5 +1,5 @@
 import { normalizeName, normalizeText, phoneticKey } from '@yanuka/search';
-import { digitsOnly, phoneSearchKey, similarity } from '@yanuka/utils';
+import { countryName, digitsOnly, phoneSearchKey, similarity } from '@yanuka/utils';
 import type { ContactSummary, ContactWithRelations } from '@yanuka/types';
 import type { ContactInput, DuplicateCandidate } from './repository.js';
 
@@ -41,7 +41,8 @@ export function formatSubtitle(contact: {
   country?: string | null;
 }): string {
   const occupation = [contact.profession, contact.role].filter(Boolean).join(' | ');
-  const place = [contact.city, contact.country].filter(Boolean).join(', ');
+  // Country codes are for storage; a Hebrew interface shows `ישראל`, not `IL`.
+  const place = [contact.city, countryName(contact.country)].filter(Boolean).join(', ');
   return [occupation, place].filter(Boolean).join(' · ');
 }
 

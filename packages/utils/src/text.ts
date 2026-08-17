@@ -3,9 +3,21 @@
  * @yanuka/search, which builds on these primitives.
  */
 
-/** Collapse runs of whitespace (including NBSP and RTL marks) to single spaces. */
+/**
+ * Collapse runs of whitespace to single spaces.
+ *
+ * The class covers more than `\s`: U+00A0 no-break space and the bidirectional
+ * control characters U+200E-U+202E, U+2066-U+2069 and U+FEFF. Those travel
+ * invisibly with text copied out of an RTL document or a PDF, and a name
+ * carrying one would never compare equal to the same name typed by hand.
+ *
+ * Written with escapes rather than the literal characters so the intent is
+ * legible in a diff and the source stays free of invisible codepoints.
+ */
+const WHITESPACE_AND_BIDI = /[\s\u00a0\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]+/g;
+
 export function collapseWhitespace(value: string): string {
-  return value.replace(/[\s ‎‏‪-‮]+/g, ' ').trim();
+  return value.replace(WHITESPACE_AND_BIDI, ' ').trim();
 }
 
 /**
