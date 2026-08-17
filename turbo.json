@@ -19,6 +19,11 @@
       "outputs": ["coverage/**"]
     },
     "dev": {
+      // The workspace packages resolve through their `dist/`, so a dev server
+      // started on a fresh clone fails to resolve `@yanuka/core` until they
+      // have been built once. Building dependencies first makes `pnpm dev`
+      // work immediately after `pnpm install`.
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },

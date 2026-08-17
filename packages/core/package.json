@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/contract-tests.d.ts",
+      "default": "./dist/contract-tests.js"
     }
   },
   "files": [

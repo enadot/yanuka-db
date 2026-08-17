@@ -13,10 +13,10 @@ Hebrew-first, RTL, and fully functional without a network connection.
 
 ```bash
 pnpm install
-pnpm build
 
 # The full application in a browser, backed by the in-memory repository and
-# 56 fictional contacts. No Rust toolchain required.
+# 56 fictional contacts. No Rust toolchain required — the workspace packages
+# it depends on are built automatically first.
 pnpm --filter @yanuka/desktop dev
 ```
 
