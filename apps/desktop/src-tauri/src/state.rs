@@ -34,10 +34,7 @@ impl AppState {
     /// transaction back, so the database is consistent, and refusing every
     /// subsequent request would strand the user's data behind a dead lock.
     pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
-        let mut guard = self
-            .connection
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self.connection.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&mut guard)
     }
 }

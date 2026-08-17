@@ -24,15 +24,34 @@ const MIN_STEM_LENGTH: usize = 4;
 const PROCLITIC_LETTERS: [char; 7] = ['ה', 'ו', 'ב', 'ל', 'מ', 'כ', 'ש'];
 
 /// Common two-letter proclitic clusters.
-const PROCLITIC_PAIRS: [&str; 11] = [
-    "וה", "וב", "ול", "ומ", "וכ", "ומה", "מה", "לכ", "כש", "שה", "שב",
-];
+const PROCLITIC_PAIRS: [&str; 11] =
+    ["וה", "וב", "ול", "ומ", "וכ", "ומה", "מה", "לכ", "כש", "שה", "שב"];
 
 /// Honorifics stripped from a name before comparison, longest first so that
 /// `הרב` is consumed before the bare `ר`. Written already-normalized.
 const HONORIFIC_PREFIXES: [&str; 22] = [
-    "האדמור", "הגאונ", "הרהג", "הרהח", "הרהצ", "מוהר", "האדמו", "הרב", "רבי", "הרר", "הגר",
-    "פרופ", "עוד", "דר", "רב", "מר", "גב", "ר", "rabbi", "rav", "reb", "prof",
+    "האדמור",
+    "הגאונ",
+    "הרהג",
+    "הרהח",
+    "הרהצ",
+    "מוהר",
+    "האדמו",
+    "הרב",
+    "רבי",
+    "הרר",
+    "הגר",
+    "פרופ",
+    "עוד",
+    "דר",
+    "רב",
+    "מר",
+    "גב",
+    "ר",
+    "rabbi",
+    "rav",
+    "reb",
+    "prof",
 ];
 
 /// Extra Latin honorifics that would otherwise be shadowed by prefix matching.
@@ -75,8 +94,33 @@ fn is_dash(c: char) -> bool {
 fn is_punctuation(c: char) -> bool {
     matches!(
         c,
-        '.' | ',' | ';' | ':' | '!' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '/'
-            | '\\' | '|' | '@' | '#' | '$' | '%' | '^' | '&' | '*' | '+' | '=' | '~' | '`'
+        '.' | ','
+            | ';'
+            | ':'
+            | '!'
+            | '?'
+            | '('
+            | ')'
+            | '['
+            | ']'
+            | '{'
+            | '}'
+            | '<'
+            | '>'
+            | '/'
+            | '\\'
+            | '|'
+            | '@'
+            | '#'
+            | '$'
+            | '%'
+            | '^'
+            | '&'
+            | '*'
+            | '+'
+            | '='
+            | '~'
+            | '`'
     )
 }
 
@@ -138,8 +182,7 @@ pub fn strip_honorifics(normalized: &str) -> String {
             break;
         }
         let head = tokens[0];
-        let is_honorific =
-            HONORIFIC_PREFIXES.contains(&head) || HONORIFIC_LATIN.contains(&head);
+        let is_honorific = HONORIFIC_PREFIXES.contains(&head) || HONORIFIC_LATIN.contains(&head);
         if is_honorific {
             tokens.remove(0);
         } else {
@@ -168,7 +211,9 @@ pub fn expand_token(token: &str) -> Vec<String> {
         }
     }
 
-    if chars.len() >= MIN_STEM_LENGTH + 1 && PROCLITIC_LETTERS.contains(&chars[0]) {
+    // Expressed as "what is left after stripping one letter", which is the
+    // condition that actually matters — see MIN_STEM_LENGTH.
+    if chars.len() > MIN_STEM_LENGTH && PROCLITIC_LETTERS.contains(&chars[0]) {
         let stem: String = chars[1..].iter().collect();
         if !variants.contains(&stem) {
             variants.push(stem);
@@ -293,9 +338,7 @@ pub fn latin_phonetic_key(word: &str) -> String {
 }
 
 fn is_hebrew(value: &str) -> bool {
-    value
-        .chars()
-        .any(|c| matches!(c as u32, 0x0590..=0x05FF | 0xFB1D..=0xFB4F))
+    value.chars().any(|c| matches!(c as u32, 0x0590..=0x05FF | 0xFB1D..=0xFB4F))
 }
 
 /// Dispatch to the Hebrew or Latin phonetic key based on the script.

@@ -35,18 +35,27 @@ impl Operation {
     }
 }
 
+/// One entry for the log.
+///
+/// A struct rather than a long parameter list: the four `Option`/`&str`
+/// arguments in the middle were trivially transposable at a call site, and
+/// transposing `payload` with `previous` would silently record the change
+/// backwards — which nobody would notice until a sync tried to replay it.
+pub struct NewMutation<'a> {
+    pub entity_type: &'a str,
+    pub entity_id: &'a str,
+    pub operation: Operation,
+    /// Changed fields only. Whole records make every edit collide.
+    pub payload: Option<&'a Value>,
+    /// Values before the change, so a failed push can be explained.
+    pub previous: Option<&'a Value>,
+    pub base_version: i64,
+    pub device_id: &'a str,
+}
+
 /// Append a mutation. Must be called inside the transaction that performs the
 /// write, or a crash between the two would leave a change that never syncs.
-pub fn record(
-    tx: &Transaction<'_>,
-    entity_type: &str,
-    entity_id: &str,
-    operation: Operation,
-    payload: Option<&Value>,
-    previous: Option<&Value>,
-    base_version: i64,
-    device_id: &str,
-) -> Result<String> {
+pub fn record(tx: &Transaction<'_>, entry: NewMutation<'_>) -> Result<String> {
     let id = new_id();
     tx.execute(
         "INSERT INTO mutations (id, entity_type, entity_id, operation, payload, previous,
@@ -54,14 +63,14 @@ pub fn record(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', 0)",
         params![
             id,
-            entity_type,
-            entity_id,
-            operation.as_str(),
-            payload.map(|value| value.to_string()),
-            previous.map(|value| value.to_string()),
-            base_version,
+            entry.entity_type,
+            entry.entity_id,
+            entry.operation.as_str(),
+            entry.payload.map(|value| value.to_string()),
+            entry.previous.map(|value| value.to_string()),
+            entry.base_version,
             now_iso(),
-            device_id,
+            entry.device_id,
         ],
     )?;
     Ok(id)

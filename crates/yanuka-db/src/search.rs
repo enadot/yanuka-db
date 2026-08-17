@@ -155,7 +155,11 @@ fn phone_candidates(connection: &Connection, digits: &str) -> Result<Vec<Candida
             score,
             reasons: vec![MatchReason {
                 source: "phone".into(),
-                quality: if matches!(quality, MatchQuality::Exact) { "exact".into() } else { "prefix".into() },
+                quality: if matches!(quality, MatchQuality::Exact) {
+                    "exact".into()
+                } else {
+                    "prefix".into()
+                },
                 term: digits.to_string(),
                 snippet: None,
                 score,
@@ -401,16 +405,8 @@ fn facet_values_for(connection: &Connection, contact_id: &str, field: &str) -> R
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-const FACET_FIELDS: [&str; 8] = [
-    "country",
-    "city",
-    "profession",
-    "specialty",
-    "tag",
-    "category",
-    "organization",
-    "language",
-];
+const FACET_FIELDS: [&str; 8] =
+    ["country", "city", "profession", "specialty", "tag", "category", "organization", "language"];
 
 /// Count facet values across the matched set.
 ///
@@ -427,11 +423,7 @@ fn compute_facets(
     for candidate in candidates {
         for field in FACET_FIELDS {
             for value in facet_values_for(connection, &candidate.contact_id, field)? {
-                *counters
-                    .entry(field.to_string())
-                    .or_default()
-                    .entry(value)
-                    .or_insert(0) += 1;
+                *counters.entry(field.to_string()).or_default().entry(value).or_insert(0) += 1;
             }
         }
     }

@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The e2e suite must never try to download a browser at test time.
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '0'
+
+jobs:
+  # Everything that does not need a system webview. Fast, and the gate for the
+  # rest of the pipeline.
+  checks:
+    name: lint · typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint typecheck test build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-dist
+          path: apps/desktop/dist
+          retention-days: 7
+
+  # The storage and search crates carry no Tauri dependency, which is the whole
+  # reason they can run here without apt-installing a webview.
+  rust:
+    name: rust · storage and search
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy -p yanuka-db -p yanuka-search --all-targets -- -D warnings
+      - run: cargo test -p yanuka-db -p yanuka-search
+
+  # The one thing the development container cannot do: prove the Tauri shell
+  # still compiles. Catches a broken command signature before the slow Windows
+  # job runs.
+  tauri-check:
+    name: rust · tauri shell compiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install webview dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            build-essential curl wget file libssl-dev libxdo-dev libayatana-appindicator3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo check -p yanuka-desktop
+
+  e2e:
+    name: e2e · real browser
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanuka/desktop exec playwright install --with-deps chromium
+      - run: pnpm build
+      # Runs against the in-memory repository, so it exercises the real screens,
+      # the real search engine and the real demo data without a Tauri shell.
+      - run: pnpm --filter @yanuka/desktop test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/desktop/playwright-report
+          retention-days: 7
+
+  installer:
+    name: windows · ContactsSetup.exe
+    runs-on: windows-latest
+    needs: [checks, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanuka/desktop tauri build
+
+      - name: Rename the NSIS output
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Path target\release\bundle\nsis -Filter *-setup.exe |
+                   Select-Object -First 1
+          if (-not $setup) { throw "no NSIS installer was produced" }
+          Copy-Item $setup.FullName -Destination ContactsSetup.exe
+          Write-Host "produced ContactsSetup.exe from $($setup.Name)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContactsSetup
+          path: ContactsSetup.exe
+          retention-days: 30

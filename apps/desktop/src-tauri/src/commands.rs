@@ -60,10 +60,7 @@ pub fn suggest_contacts(
 }
 
 #[tauri::command]
-pub fn list_contacts(
-    state: State<'_, AppState>,
-    input: Value,
-) -> Answer<Page<ContactSummary>> {
+pub fn list_contacts(state: State<'_, AppState>, input: Value) -> Answer<Page<ContactSummary>> {
     let cursor = input.get("cursor").and_then(Value::as_str).map(str::to_string);
     let limit = input.get("limit").and_then(Value::as_i64).unwrap_or(50);
     let starts_with = input.get("startsWith").and_then(Value::as_str).map(str::to_string);
@@ -74,10 +71,7 @@ pub fn list_contacts(
 }
 
 #[tauri::command]
-pub fn get_contact(
-    state: State<'_, AppState>,
-    id: String,
-) -> Answer<Option<ContactWithRelations>> {
+pub fn get_contact(state: State<'_, AppState>, id: String) -> Answer<Option<ContactWithRelations>> {
     state.with(|connection| repository::get_contact(connection, &id))
 }
 
@@ -113,21 +107,15 @@ pub fn quick_add_contact(
     input: Value,
     id: Option<String>,
 ) -> Answer<ContactWithRelations> {
-    let display_name = input
-        .get("displayName")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    let display_name =
+        input.get("displayName").and_then(Value::as_str).unwrap_or_default().to_string();
 
     let mut contact = ContactInput { display_name, ..Default::default() };
     contact.notes = input.get("notes").and_then(Value::as_str).map(str::to_string);
     if let Some(phone) = input.get("phone").and_then(Value::as_str) {
         if !phone.trim().is_empty() {
-            contact.phones = vec![PhoneInput {
-                raw: phone.to_string(),
-                is_primary: true,
-                ..Default::default()
-            }];
+            contact.phones =
+                vec![PhoneInput { raw: phone.to_string(), is_primary: true, ..Default::default() }];
         }
     }
 
@@ -150,19 +138,12 @@ pub fn delete_contact(state: State<'_, AppState>, id: String) -> Answer<()> {
 }
 
 #[tauri::command]
-pub fn restore_contact(
-    state: State<'_, AppState>,
-    id: String,
-) -> Answer<ContactWithRelations> {
+pub fn restore_contact(state: State<'_, AppState>, id: String) -> Answer<ContactWithRelations> {
     state.with(|connection| repository::restore_contact(connection, &id))
 }
 
 #[tauri::command]
-pub fn set_favorite(
-    state: State<'_, AppState>,
-    id: String,
-    is_favorite: bool,
-) -> Answer<()> {
+pub fn set_favorite(state: State<'_, AppState>, id: String, is_favorite: bool) -> Answer<()> {
     state.with(|connection| repository::set_favorite(connection, &id, is_favorite))
 }
 
@@ -295,11 +276,7 @@ pub fn list_organizations(
 #[tauri::command]
 pub fn create_organization(state: State<'_, AppState>, input: Value) -> Answer<Organization> {
     let name = input.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
-    let kind = input
-        .get("kind")
-        .and_then(Value::as_str)
-        .unwrap_or("organization")
-        .to_string();
+    let kind = input.get("kind").and_then(Value::as_str).unwrap_or("organization").to_string();
     let city = input.get("city").and_then(Value::as_str).map(str::to_string);
     let country = input.get("country").and_then(Value::as_str).map(str::to_string);
 

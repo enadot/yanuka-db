@@ -103,8 +103,9 @@ pub fn current_version(connection: &Connection) -> Result<i64> {
     if !exists {
         return Ok(0);
     }
-    Ok(connection
-        .query_row("SELECT COALESCE(MAX(version), 0) FROM schema_migrations", [], |row| {
-            row.get(0)
-        })?)
+    Ok(connection.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?)
 }

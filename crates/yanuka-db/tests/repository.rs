@@ -131,11 +131,9 @@ fn finds_a_contact_by_its_profession() {
     input.city = Some("ירושלים".into());
     repository::create_contact(&mut connection, &input, None).unwrap();
 
-    let response = search::search(
-        &connection,
-        &SearchQuery { text: "סופר סתם".into(), ..Default::default() },
-    )
-    .unwrap();
+    let response =
+        search::search(&connection, &SearchQuery { text: "סופר סתם".into(), ..Default::default() })
+            .unwrap();
 
     assert_eq!(response.total, 1);
     assert_eq!(response.results[0].contact.display_name, "ישראל סופר");
@@ -160,11 +158,9 @@ fn ignores_honorifics_on_both_sides() {
     repository::create_contact(&mut connection, &contact("הרב אברהם כהן"), None).unwrap();
 
     for query in ["אברהם כהן", "הרב אברהם כהן", "ר' אברהם כהן"] {
-        let response = search::search(
-            &connection,
-            &SearchQuery { text: query.into(), ..Default::default() },
-        )
-        .unwrap();
+        let response =
+            search::search(&connection, &SearchQuery { text: query.into(), ..Default::default() })
+                .unwrap();
         assert_eq!(response.total, 1, "query {query:?} should find the contact");
     }
 }
@@ -178,11 +174,9 @@ fn matches_a_phone_number_in_any_format() {
     repository::create_contact(&mut connection, &input, None).unwrap();
 
     for query in ["0545550134", "054-555-0134", "5550134"] {
-        let response = search::search(
-            &connection,
-            &SearchQuery { text: query.into(), ..Default::default() },
-        )
-        .unwrap();
+        let response =
+            search::search(&connection, &SearchQuery { text: query.into(), ..Default::default() })
+                .unwrap();
         assert_eq!(response.total, 1, "query {query:?} should find the contact");
     }
 }
@@ -190,7 +184,8 @@ fn matches_a_phone_number_in_any_format() {
 #[test]
 fn adding_a_word_narrows_the_result_set() {
     let mut connection = db();
-    for (name, city) in [("סופר א", "ירושלים"), ("סופר ב", "לונדון"), ("סופר ג", "ניו יורק")] {
+    for (name, city) in [("סופר א", "ירושלים"), ("סופר ב", "לונדון"), ("סופר ג", "ניו יורק")]
+    {
         let mut input = contact(name);
         input.profession = Some("סופר סתם".into());
         input.city = Some(city.into());

@@ -83,7 +83,9 @@ fn validate(input: &ContactInput) -> Result<()> {
         return Err(DbError::Validation("שם ארוך מדי".into()));
     }
     if let Some(country) = &input.country {
-        if !country.is_empty() && (country.len() != 2 || !country.chars().all(|c| c.is_ascii_uppercase())) {
+        if !country.is_empty()
+            && (country.len() != 2 || !country.chars().all(|c| c.is_ascii_uppercase()))
+        {
             return Err(DbError::Validation("קוד מדינה אינו תקין".into()));
         }
     }
@@ -145,13 +147,15 @@ pub fn create_contact(
 
     mutation::record(
         &tx,
-        "contact",
-        &contact_id,
-        Operation::Create,
-        Some(&json!({ "displayName": input.display_name })),
-        None,
-        0,
-        &device,
+        mutation::NewMutation {
+            entity_type: "contact",
+            entity_id: &contact_id,
+            operation: Operation::Create,
+            payload: Some(&json!({ "displayName": input.display_name })),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
     )?;
     reindex_contact(&tx, &contact_id)?;
     tx.commit()?;
@@ -306,11 +310,9 @@ pub fn update_contact(
     validate(input)?;
 
     let current: (i64, String) = connection
-        .query_row(
-            "SELECT version, display_name FROM contacts WHERE id = ?1",
-            params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
+        .query_row("SELECT version, display_name FROM contacts WHERE id = ?1", params![id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
         .optional()?
         .ok_or_else(|| DbError::NotFound("איש הקשר".into()))?;
 
@@ -367,13 +369,15 @@ pub fn update_contact(
 
     mutation::record(
         &tx,
-        "contact",
-        id,
-        Operation::Update,
-        Some(&json!({ "displayName": input.display_name })),
-        Some(&json!({ "displayName": current.1 })),
-        current.0,
-        &device,
+        mutation::NewMutation {
+            entity_type: "contact",
+            entity_id: id,
+            operation: Operation::Update,
+            payload: Some(&json!({ "displayName": input.display_name })),
+            previous: Some(&json!({ "displayName": current.1 })),
+            base_version: current.0,
+            device_id: &device,
+        },
     )?;
     reindex_contact(&tx, id)?;
     tx.commit()?;
@@ -397,7 +401,18 @@ pub fn delete_contact(connection: &mut Connection, id: &str) -> Result<()> {
           WHERE id = ?1",
         params![id, now, version + 1, device],
     )?;
-    mutation::record(&tx, "contact", id, Operation::Delete, None, None, version, &device)?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "contact",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: version,
+            device_id: &device,
+        },
+    )?;
     // Drops the contact out of the index; the row itself stays.
     reindex_contact(&tx, id)?;
     tx.commit()?;
@@ -419,7 +434,18 @@ pub fn restore_contact(connection: &mut Connection, id: &str) -> Result<ContactW
           WHERE id = ?1",
         params![id, now, version + 1, device],
     )?;
-    mutation::record(&tx, "contact", id, Operation::Update, Some(&json!({ "deletedAt": null })), None, version, &device)?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "contact",
+            entity_id: id,
+            operation: Operation::Update,
+            payload: Some(&json!({ "deletedAt": null })),
+            previous: None,
+            base_version: version,
+            device_id: &device,
+        },
+    )?;
     reindex_contact(&tx, id)?;
     tx.commit()?;
 
@@ -443,10 +469,8 @@ pub fn set_favorite(connection: &Connection, id: &str, is_favorite: bool) -> Res
 /// an edit, and turning every view into something other devices must reconcile
 /// would flood the sync queue for no benefit.
 pub fn touch_contact(connection: &Connection, id: &str) -> Result<()> {
-    connection.execute(
-        "UPDATE contacts SET last_viewed_at = ?2 WHERE id = ?1",
-        params![id, now_iso()],
-    )?;
+    connection
+        .execute("UPDATE contacts SET last_viewed_at = ?2 WHERE id = ?1", params![id, now_iso()])?;
     Ok(())
 }
 
@@ -479,9 +503,8 @@ pub fn get_contact(connection: &Connection, id: &str) -> Result<Option<ContactWi
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut emails = connection.prepare(
-        "SELECT * FROM contact_emails WHERE contact_id = ?1 AND deleted_at IS NULL",
-    )?;
+    let mut emails = connection
+        .prepare("SELECT * FROM contact_emails WHERE contact_id = ?1 AND deleted_at IS NULL")?;
     let emails: Vec<ContactEmail> = emails
         .query_map(params![id], |row| {
             Ok(ContactEmail {
@@ -495,9 +518,8 @@ pub fn get_contact(connection: &Connection, id: &str) -> Result<Option<ContactWi
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut aliases = connection.prepare(
-        "SELECT * FROM contact_aliases WHERE contact_id = ?1 AND deleted_at IS NULL",
-    )?;
+    let mut aliases = connection
+        .prepare("SELECT * FROM contact_aliases WHERE contact_id = ?1 AND deleted_at IS NULL")?;
     let aliases: Vec<ContactAlias> = aliases
         .query_map(params![id], |row| {
             Ok(ContactAlias {
@@ -584,9 +606,7 @@ pub fn list_contacts(
     limit: i64,
     starts_with: Option<&str>,
 ) -> Result<Page<ContactSummary>> {
-    let mut sql = String::from(
-        "SELECT c.* FROM contacts c WHERE c.deleted_at IS NULL",
-    );
+    let mut sql = String::from("SELECT c.* FROM contacts c WHERE c.deleted_at IS NULL");
     let mut args: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     if let Some(prefix) = starts_with {
@@ -599,7 +619,9 @@ pub fn list_contacts(
     }
 
     if let Some(after) = cursor {
-        sql.push_str(" AND (c.display_name, c.id) > (SELECT display_name, id FROM contacts WHERE id = ?)");
+        sql.push_str(
+            " AND (c.display_name, c.id) > (SELECT display_name, id FROM contacts WHERE id = ?)",
+        );
         args.push(Box::new(after.to_string()));
     }
 
@@ -618,11 +640,8 @@ pub fn list_contacts(
         |row| row.get(0),
     )?;
 
-    let next_cursor = if contacts.len() as i64 == limit {
-        contacts.last().map(|c| c.id.clone())
-    } else {
-        None
-    };
+    let next_cursor =
+        if contacts.len() as i64 == limit { contacts.last().map(|c| c.id.clone()) } else { None };
 
     let items = contacts
         .into_iter()

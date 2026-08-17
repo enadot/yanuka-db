@@ -75,8 +75,9 @@ fn get_tag(connection: &Connection, id: &str) -> Result<Tag> {
 /// Soft-delete a tag and reindex everyone who carried it.
 pub fn delete_tag(connection: &mut Connection, id: &str) -> Result<()> {
     let affected: Vec<String> = {
-        let mut statement = connection
-            .prepare("SELECT contact_id FROM contact_tags WHERE tag_id = ?1 AND deleted_at IS NULL")?;
+        let mut statement = connection.prepare(
+            "SELECT contact_id FROM contact_tags WHERE tag_id = ?1 AND deleted_at IS NULL",
+        )?;
         let rows = statement.query_map(params![id], |row| row.get::<_, String>(0))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
@@ -307,9 +308,7 @@ pub fn delete_note(connection: &mut Connection, id: &str) -> Result<()> {
 
 /// Counts for the settings screen and the offline indicator.
 pub fn stats(connection: &Connection) -> Result<serde_json::Value> {
-    let count = |sql: &str| -> Result<i64> {
-        Ok(connection.query_row(sql, [], |row| row.get(0))?)
-    };
+    let count = |sql: &str| -> Result<i64> { Ok(connection.query_row(sql, [], |row| row.get(0))?) };
 
     Ok(serde_json::json!({
         "contacts": count("SELECT COUNT(*) FROM contacts WHERE deleted_at IS NULL")?,

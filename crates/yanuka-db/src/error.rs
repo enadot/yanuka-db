@@ -68,11 +68,7 @@ impl DbError {
             _ => None,
         };
 
-        SerializedError {
-            code: self.code(),
-            message: self.to_string(),
-            details,
-        }
+        SerializedError { code: self.code(), message: self.to_string(), details }
     }
 }
 
@@ -80,7 +76,10 @@ impl DbError {
 /// receives `{ code, message, details }`, which is exactly what
 /// `toRepositoryError` in packages/core expects.
 impl Serialize for DbError {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         self.serialize_wire().serialize(serializer)
     }
 }

@@ -8,8 +8,7 @@
 use serde::Deserialize;
 use yanuka_search::{expand_token, normalize_name, normalize_text, phonetic_key};
 
-const FIXTURE: &str =
-    include_str!("../../../packages/search/fixtures/normalization.cases.json");
+const FIXTURE: &str = include_str!("../../../packages/search/fixtures/normalization.cases.json");
 
 #[derive(Deserialize)]
 struct TextCase {
@@ -108,13 +107,7 @@ fn phonetic_keys_match_the_shared_fixture() {
 
 #[test]
 fn every_honorific_variant_of_one_person_converges() {
-    let forms = [
-        "הרב משה כהן",
-        "ר' משה כהן",
-        "רבי משה כהן",
-        "משה כהן",
-        "הרב מֹשֶׁה כֹּהֵן",
-    ];
+    let forms = ["הרב משה כהן", "ר' משה כהן", "רבי משה כהן", "משה כהן", "הרב מֹשֶׁה כֹּהֵן"];
     let normalized: Vec<String> = forms.iter().map(|f| normalize_name(f)).collect();
     assert!(
         normalized.windows(2).all(|w| w[0] == w[1]),

@@ -47,10 +47,7 @@ fn prune(backups: &Path) -> std::io::Result<()> {
     let mut entries: Vec<_> = std::fs::read_dir(backups)?
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("contacts-")
+            entry.file_name().to_string_lossy().starts_with("contacts-")
                 && entry.file_name().to_string_lossy().ends_with(".db")
         })
         .collect();
@@ -62,10 +59,8 @@ fn prune(backups: &Path) -> std::io::Result<()> {
         let oldest = entries.remove(0);
         let _ = std::fs::remove_file(oldest.path());
         for suffix in ["-wal", "-shm"] {
-            let _ = std::fs::remove_file(PathBuf::from(format!(
-                "{}{suffix}",
-                oldest.path().display()
-            )));
+            let _ =
+                std::fs::remove_file(PathBuf::from(format!("{}{suffix}", oldest.path().display())));
         }
     }
 

@@ -71,8 +71,16 @@ pub fn reindex_contact(tx: &Transaction<'_>, contact_id: &str) -> Result<()> {
         return Ok(());
     }
 
-    let aliases = collect(tx, "SELECT value FROM contact_aliases WHERE contact_id = ?1 AND deleted_at IS NULL", contact_id)?;
-    let specialties = collect(tx, "SELECT value FROM contact_specialties WHERE contact_id = ?1 AND deleted_at IS NULL", contact_id)?;
+    let aliases = collect(
+        tx,
+        "SELECT value FROM contact_aliases WHERE contact_id = ?1 AND deleted_at IS NULL",
+        contact_id,
+    )?;
+    let specialties = collect(
+        tx,
+        "SELECT value FROM contact_specialties WHERE contact_id = ?1 AND deleted_at IS NULL",
+        contact_id,
+    )?;
     let tags = collect(
         tx,
         "SELECT t.name FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id
@@ -145,9 +153,7 @@ pub fn reindex_contact(tx: &Transaction<'_>, contact_id: &str) -> Result<()> {
     // Names, aliases and phone digits only. Trigram-indexing free text would
     // multiply the index size for a layer that exists to rescue misspelled
     // *names*.
-    let haystack = join_normalized(
-        &[vec![display_name], aliases, phone_digits].concat(),
-    );
+    let haystack = join_normalized(&[vec![display_name], aliases, phone_digits].concat());
     tx.execute(
         "INSERT INTO contact_trigram (contact_id, haystack) VALUES (?1, ?2)",
         params![contact_id, haystack],
