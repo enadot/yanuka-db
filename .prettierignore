@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+.turbo
+.next
+target
+coverage
+pnpm-lock.yaml
+*.sql
