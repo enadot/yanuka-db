@@ -121,6 +121,45 @@ export function snippetAround(text: string, terms: string[], radius = 60): strin
   }
   if (index === -1) return null;
 
+  return cutWindow(text, index, matchedLength, radius);
+}
+
+/**
+ * Snippet for a term that was matched *after* normalization.
+ *
+ * The search terms reaching this point have been folded — final letters
+ * changed, geresh and niqqud removed — so they no longer occur literally in the
+ * text the user wrote. A plain `indexOf` therefore always misses, and the
+ * snippet silently comes back empty.
+ *
+ * Rather than trying to map normalized offsets back through a transformation
+ * that changes string length, this walks the original word by word, normalizes
+ * each word, and cuts around the first one that matches. Offsets stay anchored
+ * to the untouched source text, so what the user sees is exactly what they
+ * wrote.
+ *
+ * @param normalizeWord the same normalizer that produced `normalizedTerm`
+ */
+export function snippetAroundNormalized(
+  text: string,
+  normalizedTerm: string,
+  normalizeWord: (value: string) => string,
+  radius = 60,
+): string | null {
+  if (!text || !normalizedTerm) return null;
+
+  const wordPattern = /[\p{L}\p{N}][\p{L}\p{N}'’"״׳-]*/gu;
+  for (const match of text.matchAll(wordPattern)) {
+    const normalized = normalizeWord(match[0]);
+    if (!normalized) continue;
+    if (normalized === normalizedTerm || normalized.includes(normalizedTerm)) {
+      return cutWindow(text, match.index, match[0].length, radius);
+    }
+  }
+  return null;
+}
+
+function cutWindow(text: string, index: number, matchedLength: number, radius: number): string {
   const start = Math.max(0, index - radius);
   const end = Math.min(text.length, index + matchedLength + radius);
   const prefix = start > 0 ? '…' : '';

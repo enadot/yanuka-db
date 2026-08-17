@@ -12,13 +12,17 @@
     },
     "./migrations/*": "./migrations/*"
   },
-  "files": ["dist", "migrations"],
+  "files": [
+    "dist",
+    "migrations"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "node scripts/generate-migrations.mjs",
+    "build": "pnpm generate && tsc -p tsconfig.json",
+    "typecheck": "pnpm generate && tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
-    "test": "vitest run",
-    "clean": "rimraf dist .turbo"
+    "test": "pnpm generate && vitest run",
+    "clean": "rimraf dist .turbo src/generated"
   },
   "dependencies": {
     "@yanuka/types": "workspace:*"

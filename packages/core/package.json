@@ -11,7 +11,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -20,6 +22,7 @@
     "clean": "rimraf dist .turbo"
   },
   "dependencies": {
+    "@yanuka/database": "workspace:*",
     "@yanuka/search": "workspace:*",
     "@yanuka/types": "workspace:*",
     "@yanuka/utils": "workspace:*",

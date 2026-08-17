@@ -1,4 +1,4 @@
-import { similarity, snippetAround, tokenize } from '@yanuka/utils';
+import { similarity, snippetAroundNormalized, tokenize } from '@yanuka/utils';
 import type {
   ContactSummary,
   FacetField,
@@ -138,9 +138,11 @@ function matchTerm(entry: FieldEntry, term: ParsedTerm): MatchReason | null {
         source: entry.source,
         quality,
         term: value,
+        // Only long free-text fields get a snippet; for a name or a tag the
+        // field itself is already the answer.
         snippet:
           entry.source === 'notes' || entry.source === 'reason_for_saving'
-            ? snippetAround(entry.original, [value])
+            ? snippetAroundNormalized(entry.original, value, normalizeText)
             : null,
         score,
       };
@@ -358,17 +360,27 @@ export function search(index: InMemoryIndex, query: SearchQuery, now = Date.now(
       let allTermsMatched = true;
       for (const term of parsed.terms) {
         let bestForTerm: MatchReason | null = null;
+        let bestSnippet: MatchReason | null = null;
+
         for (const f of entry.fields) {
           const reason = matchTerm(f, term);
-          if (reason && (!bestForTerm || reason.score > bestForTerm.score)) {
-            bestForTerm = reason;
+          if (!reason) continue;
+          if (!bestForTerm || reason.score > bestForTerm.score) bestForTerm = reason;
+          // A free-text hit is kept even when a stronger field also matched.
+          // Its score is not what makes it worth reporting — the snippet is:
+          // "found because of this sentence you wrote" is the explanation that
+          // actually helps someone who has forgotten the name.
+          if (reason.snippet && (!bestSnippet || reason.score > bestSnippet.score)) {
+            bestSnippet = reason;
           }
         }
+
         if (!bestForTerm) {
           allTermsMatched = false;
           break;
         }
         reasons.push(bestForTerm);
+        if (bestSnippet && bestSnippet !== bestForTerm) reasons.push(bestSnippet);
       }
       if (!allTermsMatched) continue;
     } else if (parsed.fields.length === 0 && !query.favoritesOnly && !query.filters) {
