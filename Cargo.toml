@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = ["crates/yanuka-db", "crates/yanuka-search", "apps/desktop/src-tauri"]
+
+# The Tauri shell links against the system webview, which is not present on
+# every development machine (and notably not on the Linux CI runner used for
+# the fast checks). `yanuka-db` and `yanuka-search` deliberately have no Tauri
+# dependency so they can be built and tested anywhere:
+#
+#     cargo test -p yanuka-db -p yanuka-search
+#
+# Building the whole workspace requires libwebkit2gtk-4.1-dev on Linux, or
+# Windows/macOS. See docs/ARCHITECTURE.md.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.release]
+# The installer ships to machines that are frequently offline and may be
+# modest; a smaller, faster binary matters more here than build time.
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

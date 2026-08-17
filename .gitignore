@@ -50,3 +50,6 @@ Thumbs.db
 coverage/
 playwright-report/
 test-results/
+
+# Rust
+Cargo.lock.orig

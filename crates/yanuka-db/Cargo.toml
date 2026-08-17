@@ -1,0 +1,33 @@
+[package]
+name = "yanuka-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Local SQLite storage, migrations and search execution for the contacts database"
+
+[dependencies]
+yanuka-search = { path = "../yanuka-search" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# `bundled` compiles SQLite into the binary rather than linking whatever the
+# host happens to ship. That is what guarantees FTS5, the trigram tokenizer and
+# STRICT tables are present on a user's Windows machine, and it keeps the
+# desktop's SQLite version pinned to what the tests ran against.
+#
+# Swapping to `bundled-sqlcipher-vendored-openssl` is the only change encryption
+# at rest requires — every connection is already opened through one function.
+# See docs/SECURITY.md.
+rusqlite = { version = "0.37", features = ["bundled", "functions", "backup", "serde_json"] }
+ulid = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+# Not enabled yet; the deferral and its cost are recorded in DECISIONS.md.
+sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]

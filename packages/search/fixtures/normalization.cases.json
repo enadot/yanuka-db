@@ -1,0 +1,64 @@
+{
+  "$comment": [
+    "Cross-implementation conformance fixture for the Hebrew normalizer.",
+    "",
+    "Read by both packages/search (vitest) and crates/yanuka-search (cargo test).",
+    "The normalizer exists twice — TypeScript for the browser, mobile and the",
+    "in-memory engine; Rust for the desktop's indexing and query path — and the",
+    "two must agree exactly, or a contact indexed by one would be unfindable by",
+    "the other. This file is the contract between them; neither side may change",
+    "behaviour without updating it, which makes the divergence visible in review."
+  ],
+
+  "normalizeText": [
+    { "input": "שָׁלוֹם", "expected": "שלומ", "why": "niqqud stripped, final mem folded" },
+    { "input": "מֹשֶׁה", "expected": "משה", "why": "niqqud stripped" },
+    { "input": "אַבְרָהָם", "expected": "אברהמ", "why": "niqqud stripped, final mem folded" },
+    { "input": "ר׳ משה", "expected": "ר משה", "why": "U+05F3 geresh removed" },
+    { "input": "ר' משה", "expected": "ר משה", "why": "ASCII apostrophe removed" },
+    { "input": "סת״ם", "expected": "סתמ", "why": "U+05F4 gershayim removed" },
+    { "input": "סת\"ם", "expected": "סתמ", "why": "ASCII quote removed" },
+    { "input": "סת”ם", "expected": "סתמ", "why": "curly quote removed" },
+    { "input": "כהן", "expected": "כהנ", "why": "final nun folded" },
+    { "input": "ירושלים", "expected": "ירושלימ", "why": "final mem folded" },
+    { "input": "בן־גוריון", "expected": "בנ גוריונ", "why": "maqaf becomes a space" },
+    { "input": "בני-ברק", "expected": "בני ברק", "why": "hyphen becomes a space" },
+    { "input": "José Cohen", "expected": "jose cohen", "why": "Latin accent and case folded" },
+    { "input": "MOSHE", "expected": "moshe", "why": "Latin case folded" },
+    { "input": "  משה    כהן  ", "expected": "משה כהנ", "why": "whitespace collapsed" },
+    { "input": "", "expected": "", "why": "empty input" },
+    { "input": "   ", "expected": "", "why": "whitespace-only input" }
+  ],
+
+  "normalizeName": [
+    { "input": "הרב משה כהן", "expected": "משה כהנ", "why": "honorific stripped" },
+    { "input": "ר' משה כהן", "expected": "משה כהנ", "why": "abbreviated honorific stripped" },
+    { "input": "רבי משה כהן", "expected": "משה כהנ", "why": "honorific stripped" },
+    { "input": "הרב הגאון רבי משה כהן", "expected": "משה כהנ", "why": "stacked honorifics stripped" },
+    { "input": "משה כהן", "expected": "משה כהנ", "why": "no honorific to strip" },
+    { "input": "Rabbi Moshe Cohen", "expected": "moshe cohen", "why": "Latin honorific stripped" },
+    { "input": "הרב", "expected": "הרב", "why": "never strips the whole name away" },
+    { "input": "רבי", "expected": "רבי", "why": "never strips the whole name away" }
+  ],
+
+  "expandToken": [
+    { "input": "מלונדונ", "expected": ["מלונדונ", "לונדונ"], "why": "mem proclitic, stem long enough" },
+    { "input": "בירושלימ", "expected": ["בירושלימ", "ירושלימ"], "why": "bet proclitic" },
+    { "input": "מלונ", "expected": ["מלונ"], "why": "stem would be 3 chars — 'hotel', not 'from-lon'" },
+    { "input": "שלומ", "expected": ["שלומ"], "why": "stem would be 3 chars" },
+    { "input": "בית", "expected": ["בית"], "why": "too short to strip" },
+    { "input": "לוי", "expected": ["לוי"], "why": "too short to strip" },
+    { "input": "משה", "expected": ["משה"], "why": "too short to strip" },
+    { "input": "הרב", "expected": ["הרב"], "why": "too short to strip" },
+    { "input": "כהנ", "expected": ["כהנ"], "why": "too short to strip" }
+  ],
+
+  "phoneticKey": [
+    { "a": "פרידמן", "b": "פרידמאן", "equal": true, "why": "matres lectionis alef is optional" },
+    { "a": "Friedman", "b": "Freidman", "equal": true, "why": "vowel transposition in transliteration" },
+    { "a": "Moshe", "b": "Moishe", "equal": true, "why": "Yiddish vs Hebrew transliteration" },
+    { "a": "Cohen", "b": "Kohen", "equal": true, "why": "c/k transliteration variance" },
+    { "a": "Friedman", "b": "Goldman", "equal": false, "why": "different names must not collide" },
+    { "a": "כהן", "b": "לוי", "equal": false, "why": "different names must not collide" }
+  ]
+}
