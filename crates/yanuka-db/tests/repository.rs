@@ -337,3 +337,78 @@ fn stats_report_the_pending_mutation_count() {
     assert_eq!(value["contacts"], 1);
     assert_eq!(value["sync"]["pendingMutations"], 1);
 }
+
+#[test]
+fn detail_includes_organizations_relationships_and_notes() {
+    // The desktop detail screen dereferences all three collections
+    // unconditionally, so a missing key is a blank page, not a cosmetic gap.
+    let mut connection = db();
+    let person =
+        repository::create_contact(&mut connection, &contact("ר' משה פרנקל"), None).unwrap();
+    let friend =
+        repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
+
+    taxonomy::create_relationship(
+        &connection,
+        &person.contact.id,
+        &friend.contact.id,
+        "knows",
+        None,
+    )
+    .unwrap();
+    taxonomy::add_note(&mut connection, &person.contact.id, "מכיר את כל הסופרים בעיר", false)
+        .unwrap();
+
+    let organization = taxonomy::create_organization(
+        &connection,
+        "חברה קדישא",
+        "community",
+        Some("ירושלים"),
+        Some("IL"),
+    )
+    .unwrap();
+    connection
+        .execute(
+            "INSERT INTO contact_organizations (id, contact_id, organization_id, role, is_primary,
+                                                created_at, updated_at, version)
+             VALUES ('01LINK', ?1, ?2, 'גבאי', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1)",
+            yanuka_db::rusqlite::params![person.contact.id, organization.id],
+        )
+        .unwrap();
+
+    let out = repository::get_contact(&connection, &person.contact.id).unwrap().unwrap();
+    assert_eq!(out.organizations.len(), 1);
+    assert_eq!(out.organizations[0].organization.name, "חברה קדישא");
+    assert_eq!(out.organizations[0].role.as_deref(), Some("גבאי"));
+    assert_eq!(out.contact_notes.len(), 1);
+    assert_eq!(out.contact_notes[0].body, "מכיר את כל הסופרים בעיר");
+    assert_eq!(out.relationships.len(), 1);
+    assert_eq!(out.relationships[0].direction, "out");
+    assert_eq!(out.relationships[0].other_contact.display_name, "יעקב טייטלבוים");
+
+    // The same edge, read from its far endpoint.
+    let seen_from_friend =
+        repository::get_contact(&connection, &friend.contact.id).unwrap().unwrap();
+    assert_eq!(seen_from_friend.relationships.len(), 1);
+    assert_eq!(seen_from_friend.relationships[0].direction, "in");
+    assert_eq!(seen_from_friend.relationships[0].other_contact.display_name, "ר' משה פרנקל");
+}
+
+#[test]
+fn detail_serializes_the_collections_even_when_empty() {
+    // This is the wire contract the webview relies on: `organizations`,
+    // `relationships` and `contactNotes` must exist as arrays on every
+    // response, because the screens call `.map` on them without guards.
+    let mut connection = db();
+    let created =
+        repository::create_contact(&mut connection, &contact("אישה בלי כלום"), None).unwrap();
+
+    let value = serde_json::to_value(&created).unwrap();
+    for key in ["organizations", "relationships", "contactNotes"] {
+        assert!(
+            value.get(key).is_some_and(|v| v.is_array()),
+            "expected `{key}` to serialize as an array, got: {:?}",
+            value.get(key)
+        );
+    }
+}

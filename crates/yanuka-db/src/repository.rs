@@ -576,6 +576,100 @@ pub fn get_contact(connection: &Connection, id: &str) -> Result<Option<ContactWi
         id,
     )?;
 
+    let mut organizations = connection.prepare(
+        "SELECT co.id, co.contact_id, co.organization_id, co.role, co.is_primary,
+                co.started_at, co.ended_at, co.created_at,
+                o.name, o.normalized, o.kind, o.city, o.region, o.country, o.address, o.notes
+           FROM contact_organizations co JOIN organizations o ON o.id = co.organization_id
+          WHERE co.contact_id = ?1 AND co.deleted_at IS NULL AND o.deleted_at IS NULL
+          ORDER BY co.is_primary DESC, co.created_at",
+    )?;
+    let organizations: Vec<ContactOrganizationLink> = organizations
+        .query_map(params![id], |row| {
+            Ok(ContactOrganizationLink {
+                id: row.get("id")?,
+                contact_id: row.get("contact_id")?,
+                organization_id: row.get("organization_id")?,
+                role: row.get("role")?,
+                is_primary: row.get::<_, i64>("is_primary")? != 0,
+                started_at: row.get("started_at")?,
+                ended_at: row.get("ended_at")?,
+                created_at: row.get("created_at")?,
+                organization: Organization {
+                    id: row.get("organization_id")?,
+                    name: row.get("name")?,
+                    normalized: row.get("normalized")?,
+                    kind: row.get("kind")?,
+                    city: row.get("city")?,
+                    region: row.get("region")?,
+                    country: row.get("country")?,
+                    address: row.get("address")?,
+                    notes: row.get("notes")?,
+                },
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    // Both directions in one pass; the far endpoint is summarized afterwards so
+    // the row mapping never queries the connection it is borrowing.
+    let mut edges = connection.prepare(
+        "SELECT r.id, r.from_contact_id, r.to_contact_id, r.type, r.notes, r.created_at
+           FROM relationships r
+          WHERE (r.from_contact_id = ?1 OR r.to_contact_id = ?1) AND r.deleted_at IS NULL
+          ORDER BY r.created_at",
+    )?;
+    let edges: Vec<(String, String, String, String, Option<String>, String)> = edges
+        .query_map(params![id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut relationships = Vec::with_capacity(edges.len());
+    for (edge_id, from_id, to_id, kind, edge_notes, edge_created) in edges {
+        let (direction, other_id) =
+            if from_id == id { ("out", to_id.clone()) } else { ("in", from_id.clone()) };
+        // A deleted far endpoint silently drops the edge rather than rendering
+        // a link into a contact that no longer exists.
+        let other = connection
+            .query_row(
+                "SELECT * FROM contacts WHERE id = ?1 AND deleted_at IS NULL",
+                params![other_id],
+                contact_from_row,
+            )
+            .optional()?;
+        let Some(other) = other else {
+            continue;
+        };
+        relationships.push(RelationshipEdge {
+            id: edge_id,
+            from_contact_id: from_id,
+            to_contact_id: to_id,
+            kind,
+            notes: edge_notes,
+            created_at: edge_created,
+            direction: direction.to_string(),
+            other_contact: summarize(connection, other)?,
+        });
+    }
+
+    let mut contact_notes = connection.prepare(
+        "SELECT id, contact_id, body, is_sensitive, author_id, created_at, updated_at
+           FROM notes WHERE contact_id = ?1 AND deleted_at IS NULL
+          ORDER BY created_at DESC",
+    )?;
+    let contact_notes: Vec<Note> = contact_notes
+        .query_map(params![id], |row| {
+            Ok(Note {
+                id: row.get("id")?,
+                contact_id: row.get("contact_id")?,
+                body: row.get("body")?,
+                is_sensitive: row.get::<_, i64>("is_sensitive")? != 0,
+                author_id: row.get("author_id")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
     Ok(Some(ContactWithRelations {
         contact,
         phones,
@@ -585,6 +679,9 @@ pub fn get_contact(connection: &Connection, id: &str) -> Result<Option<ContactWi
         categories,
         specialties,
         languages,
+        organizations,
+        relationships,
+        contact_notes,
     }))
 }
 
