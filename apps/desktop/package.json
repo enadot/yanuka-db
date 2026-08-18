@@ -4,14 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "turbo run build --filter=@yanuka/desktop^... && vite",
-    "build": "turbo run build --filter=@yanuka/desktop^... && vite build",
+    "dev": "pnpm -w run build && vite",
+    "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "vitest run --passWithNoTests",
     "tauri": "tauri",
-    "tauri:dev": "turbo run build --filter=@yanuka/desktop^... && tauri dev",
+    "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "clean": "rimraf dist .turbo",
     "test:e2e": "playwright test"
