@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use rusqlite::Connection;
+use yanuka_db::rusqlite::Connection;
 use yanuka_db::{migrate, open};
 
 /// The open database, guarded for shared access across IPC calls.
