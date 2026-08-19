@@ -111,6 +111,22 @@ function useInvalidateContacts() {
   };
 }
 
+/**
+ * Bulk-import surface: create without per-row invalidation.
+ *
+ * `useCreateContact` invalidates four query namespaces on every success, which
+ * is right for a form and wrong for a three-hundred-row import. The import
+ * screen creates rows through `create` and calls `invalidate` once at the end.
+ */
+export function useImportContacts() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return {
+    create: (input: ContactInput) => repository.createContact(input),
+    invalidate,
+  };
+}
+
 export function useCreateContact() {
   const repository = useRepository();
   const invalidate = useInvalidateContacts();

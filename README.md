@@ -44,6 +44,12 @@ packages/           types · validation · utils · search · database · core �
 docs/               architecture, database, search, sync, security, decisions
 ```
 
+## Importing an existing archive
+
+הגדרות ← ייבוא מקובץ. קבצי CSV מ־Google Contacts, מ־Outlook או מ־Excel; זיהוי
+הכותרות אוטומטי, המיפוי ניתן לתיקון לפני הכתיבה, ושורות שלא ניתן לייבא (ללא שם)
+מדווחות בסיכום במקום לעצור את השאר. ADR-026.
+
 ## Verification
 
 ```bash

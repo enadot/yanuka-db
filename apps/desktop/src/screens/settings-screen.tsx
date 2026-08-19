@@ -1,9 +1,11 @@
-import { Database, HardDrive, Info, Tags } from 'lucide-react';
+import { Database, FileUp, HardDrive, Info, Tags } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
   Alert,
   AlertDescription,
   AlertTitle,
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -83,6 +85,23 @@ export function SettingsScreen() {
           <p className="pt-2 text-xs text-muted-foreground">
             כל שינוי נרשם מקומית ומסונכרן כשהחיבור חוזר. המערכת עובדת במלואה גם ללא אינטרנט.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileUp className="size-4" aria-hidden />
+            ייבוא
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            ייבוא אנשי קשר מקובץ CSV — יצוא מ־Google Contacts, מ־Outlook או מגיליון Excel.
+          </p>
+          <Button asChild variant="outline">
+            <Link to="/import">ייבוא מקובץ</Link>
+          </Button>
         </CardContent>
       </Card>
 

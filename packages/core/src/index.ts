@@ -2,6 +2,7 @@ export * from './errors.js';
 export * from './repository.js';
 export * from './permissions.js';
 export * from './contact-logic.js';
+export * from './import.js';
 export * from './mock-repository.js';
 
 // `contract-tests` is deliberately NOT re-exported here. It imports `vitest`,

@@ -234,3 +234,25 @@ needed a native build that the container could not produce.
 Achievable for the query, and measured as such in Rust. Stating it end-to-end
 would fold in React render and IPC, which are a separate budget and a separate
 set of fixes. See SEARCH.md.
+
+## ADR-026 — CSV import: pure mapping logic behind the repository boundary
+
+The archive this product exists for lives in notebooks and old exports, so the
+first deferred item to land was CSV import. The split follows the codebase's
+one rule: parsing (`@yanuka/utils` csv.ts) and header-detection/row-mapping
+(`@yanuka/core` import.ts) are pure and unit-tested; the screen feeds the
+result to `ContactsRepository.createContact` row by row, so the flow is
+identical against the in-memory repository and SQLite, and the e2e suite
+exercises it without a Tauri shell.
+
+Import decisions all follow "מידע לא הולך לאיבוד": only a nameless row fails
+(and is reported, not silently skipped); phones import exactly as written; a
+malformed email becomes a notes line; every imported contact records its file
+name in `source`. Encoding is UTF-8 with a windows-1255 retry on damage —
+detection by decode failure, not heuristics. The parser is hand-rolled
+(RFC 4180 + BOM + bare-CR): a dependency would not cover the part that is
+actually hard here, which is the mapping.
+
+OCR import stays deferred: it needs a model or a service, and both collide
+with the offline constraint. The mapping layer is the contained seam it will
+slot into.
