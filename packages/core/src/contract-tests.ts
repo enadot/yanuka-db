@@ -240,6 +240,57 @@ export function runRepositoryContractTests(
       expect(fromB?.relationships.some((edge) => edge.otherContact.id === a.id)).toBe(true);
     });
 
+    it('finds duplicate pairs and merges without losing data', async () => {
+      const repo = await makeRepository();
+      const keep = await repo.createContact({
+        ...blankContact,
+        displayName: 'זלמן דוקטור',
+        city: 'ירושלים',
+        notes: 'הערה על הנשמר',
+        phones: [{ kind: 'mobile', raw: '054-8880001', label: null, isPrimary: true }],
+      });
+      const merged = await repo.createContact({
+        ...blankContact,
+        displayName: 'ר זלמן דוקטור',
+        city: 'צפת',
+        profession: 'רופא',
+        notes: 'הערה על הממוזג',
+        // The first number matches the kept contact's exactly; the second is
+        // the same number in another format. Only the exact match is deduped:
+        // suffix-based dedupe could silently drop a genuinely different
+        // number that shares a local suffix, and losing a number is the one
+        // outcome this product forbids.
+        phones: [
+          { kind: 'mobile', raw: '054-8880001', label: null, isPrimary: true },
+          { kind: 'home', raw: '+972548880001', label: null, isPrimary: false },
+        ],
+      });
+
+      const pairs = await repo.listDuplicatePairs();
+      const pair = pairs.find(
+        (candidate) =>
+          [candidate.first.id, candidate.second.id].includes(keep.id) &&
+          [candidate.first.id, candidate.second.id].includes(merged.id),
+      );
+      expect(pair).toBeDefined();
+      expect(pair?.reasons).toContain('אותו מספר טלפון');
+
+      const out = await repo.mergeContacts(keep.id, merged.id);
+      // The exact duplicate is not doubled; the variant format moved over.
+      expect(out.phones).toHaveLength(2);
+      expect(out.phones.map((phone) => phone.raw)).toContain('+972548880001');
+      expect(out.phones.filter((phone) => phone.isPrimary)).toHaveLength(1);
+      // Blank filled, conflict and the merged notes preserved in notes.
+      expect(out.profession).toBe('רופא');
+      expect(out.city).toBe('ירושלים');
+      expect(out.notes).toContain('הערה על הנשמר');
+      expect(out.notes).toContain('צפת');
+      expect(out.notes).toContain('הערה על הממוזג');
+      // The merged contact no longer appears anywhere live.
+      expect(await repo.getContact(merged.id).then((c) => c?.deletedAt)).toBeTruthy();
+      expect(await repo.mergeContacts(keep.id, keep.id).catch(() => 'rejected')).toBe('rejected');
+    });
+
     it('reports stats', async () => {
       const repo = await makeRepository();
       const stats = await repo.stats();

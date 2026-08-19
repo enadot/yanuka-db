@@ -53,6 +53,8 @@ pub fn run() {
             commands::set_favorite,
             commands::touch_contact,
             commands::find_duplicates,
+            commands::list_duplicate_pairs,
+            commands::merge_contacts,
             commands::list_tags,
             commands::create_tag,
             commands::delete_tag,

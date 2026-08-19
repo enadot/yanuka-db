@@ -127,6 +127,24 @@ export function useImportContacts() {
   };
 }
 
+export function useDuplicatePairs() {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: ['contacts', 'duplicate-pairs'],
+    queryFn: () => repository.listDuplicatePairs(),
+  });
+}
+
+export function useMergeContacts() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: ({ keepId, mergeId }: { keepId: Ulid; mergeId: Ulid }) =>
+      repository.mergeContacts(keepId, mergeId),
+    onSuccess: invalidate,
+  });
+}
+
 export function useCreateContact() {
   const repository = useRepository();
   const invalidate = useInvalidateContacts();

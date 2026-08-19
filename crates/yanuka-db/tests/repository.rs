@@ -412,3 +412,110 @@ fn detail_serializes_the_collections_even_when_empty() {
         );
     }
 }
+
+#[test]
+fn duplicate_pairs_are_found_by_phone_email_and_name() {
+    let mut connection = db();
+    let mut first = contact("אברהם כהן");
+    first.phones =
+        vec![PhoneInput { raw: "054-5550134".into(), is_primary: true, ..Default::default() }];
+    let first = repository::create_contact(&mut connection, &first, None).unwrap();
+
+    let mut second = contact("אברהם הכהן");
+    // Same number in a different format — the digits still end identically.
+    second.phones =
+        vec![PhoneInput { raw: "+972545550134".into(), is_primary: true, ..Default::default() }];
+    let second = repository::create_contact(&mut connection, &second, None).unwrap();
+
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+
+    let pairs = yanuka_db::merge::list_duplicate_pairs(&connection, 50).unwrap();
+    assert_eq!(pairs.len(), 2);
+    // The phone pair outranks the name pair.
+    assert!(pairs[0].confidence > pairs[1].confidence);
+    assert_eq!(pairs[0].reasons, vec!["אותו מספר טלפון"]);
+    let ids = [pairs[0].first.id.clone(), pairs[0].second.id.clone()];
+    assert!(ids.contains(&first.contact.id) && ids.contains(&second.contact.id));
+    assert_eq!(pairs[1].reasons, vec!["שם זהה"]);
+}
+
+#[test]
+fn merge_preserves_every_field_and_moves_children() {
+    let mut connection = db();
+    let mut keep = contact("ר' משה פרנקל");
+    keep.city = Some("ירושלים".into());
+    keep.notes = Some("מכיר את כל הסופרים".into());
+    keep.phones =
+        vec![PhoneInput { raw: "02-6521234".into(), is_primary: true, ..Default::default() }];
+    let keep = repository::create_contact(&mut connection, &keep, None).unwrap();
+
+    let mut merge = contact("משה פרנקל");
+    merge.city = Some("בני ברק".into()); // conflicts with the kept city
+    merge.profession = Some("סופר סתם".into()); // fills a blank
+    merge.notes = Some("לחזור אליו אחרי החגים".into());
+    merge.phones = vec![
+        PhoneInput { raw: "02-6521234".into(), is_primary: true, ..Default::default() }, // duplicate
+        PhoneInput { raw: "054-5550199".into(), ..Default::default() },                  // new
+    ];
+    let merge = repository::create_contact(&mut connection, &merge, None).unwrap();
+    taxonomy::add_note(&mut connection, &merge.contact.id, "פגשתי אותו בכנס", false).unwrap();
+
+    let other =
+        repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
+    taxonomy::create_relationship(&connection, &merge.contact.id, &other.contact.id, "knows", None)
+        .unwrap();
+
+    let out =
+        yanuka_db::merge::merge_contacts(&mut connection, &keep.contact.id, &merge.contact.id)
+            .unwrap();
+
+    // Children: the duplicate phone was not doubled, the new one moved over.
+    let raws: Vec<&str> = out.phones.iter().map(|p| p.raw.as_str()).collect();
+    assert_eq!(raws.len(), 2);
+    assert!(raws.contains(&"02-6521234") && raws.contains(&"054-5550199"));
+    assert_eq!(out.phones.iter().filter(|p| p.is_primary).count(), 1);
+
+    // Scalars: blank filled, conflict preserved in the notes, notes appended.
+    assert_eq!(out.contact.profession.as_deref(), Some("סופר סתם"));
+    assert_eq!(out.contact.city.as_deref(), Some("ירושלים"));
+    let notes = out.contact.notes.clone().unwrap();
+    assert!(notes.contains("מכיר את כל הסופרים"));
+    assert!(notes.contains("בני ברק"));
+    assert!(notes.contains("לחזור אליו אחרי החגים"));
+
+    // The timestamped note and the relationship edge followed the merge.
+    assert_eq!(out.contact_notes.len(), 1);
+    assert_eq!(out.contact_notes[0].body, "פגשתי אותו בכנס");
+    assert_eq!(out.relationships.len(), 1);
+    assert_eq!(out.relationships[0].other_contact.display_name, "יעקב טייטלבוים");
+
+    // The merged contact is gone from live queries but recorded in the log.
+    assert!(repository::get_contact(&connection, &merge.contact.id)
+        .unwrap()
+        .unwrap()
+        .contact
+        .deleted_at
+        .is_some());
+    let logged: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM mutations WHERE entity_id = ?1 AND previous IS NOT NULL",
+            yanuka_db::rusqlite::params![merge.contact.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(logged, 1);
+
+    // And no pair remains to nag about.
+    assert!(yanuka_db::merge::list_duplicate_pairs(&connection, 50).unwrap().is_empty());
+}
+
+#[test]
+fn merge_refuses_self_and_missing() {
+    let mut connection = db();
+    let a = repository::create_contact(&mut connection, &contact("אברהם כהן"), None).unwrap();
+    assert!(
+        yanuka_db::merge::merge_contacts(&mut connection, &a.contact.id, &a.contact.id).is_err()
+    );
+    assert!(yanuka_db::merge::merge_contacts(&mut connection, &a.contact.id, "01MISSING").is_err());
+}

@@ -97,11 +97,16 @@ export function SettingsScreen() {
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            ייבוא אנשי קשר מקובץ CSV — יצוא מ־Google Contacts, מ־Outlook או מגיליון Excel.
+            ייבוא אנשי קשר מקובץ CSV, ואיתור כפילויות שנוצרו ממקורות שונים.
           </p>
-          <Button asChild variant="outline">
-            <Link to="/import">ייבוא מקובץ</Link>
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild variant="outline">
+              <Link to="/import">ייבוא מקובץ</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/duplicates">איתור כפילויות</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

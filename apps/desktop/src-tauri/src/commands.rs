@@ -228,6 +228,26 @@ pub fn find_duplicates(
     })
 }
 
+/// Whole-database duplicate scan for the dedup screen.
+#[tauri::command]
+pub fn list_duplicate_pairs(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Answer<Vec<yanuka_db::merge::DuplicatePair>> {
+    state
+        .with(|connection| yanuka_db::merge::list_duplicate_pairs(connection, limit.unwrap_or(100)))
+}
+
+/// Merge one contact into another without losing data. See yanuka_db::merge.
+#[tauri::command]
+pub fn merge_contacts(
+    state: State<'_, AppState>,
+    keep_id: String,
+    merge_id: String,
+) -> Answer<ContactWithRelations> {
+    state.with(|connection| yanuka_db::merge::merge_contacts(connection, &keep_id, &merge_id))
+}
+
 #[tauri::command]
 pub fn list_tags(state: State<'_, AppState>) -> Answer<Vec<Tag>> {
     state.with(|connection| taxonomy::list_tags(connection))

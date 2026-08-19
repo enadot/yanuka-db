@@ -6,6 +6,7 @@ import { ContactDetailScreen } from './screens/contact-detail-screen';
 import { ContactEditScreen } from './screens/contact-edit-screen';
 import { SettingsScreen } from './screens/settings-screen';
 import { ImportScreen } from './screens/import-screen';
+import { DuplicatesScreen } from './screens/duplicates-screen';
 
 export function App() {
   return (
@@ -18,6 +19,7 @@ export function App() {
         <Route path="contacts/:id/edit" element={<ContactEditScreen mode="edit" />} />
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="import" element={<ImportScreen />} />
+        <Route path="duplicates" element={<DuplicatesScreen />} />
       </Route>
     </Routes>
   );

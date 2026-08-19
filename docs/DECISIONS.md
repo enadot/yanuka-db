@@ -256,3 +256,24 @@ actually hard here, which is the mapping.
 OCR import stays deferred: it needs a model or a service, and both collide
 with the offline constraint. The mapping layer is the contained seam it will
 slot into.
+
+## ADR-027 — Duplicate detection is whole-database; merge is lossless by rule
+
+Follows directly from CSV import (ADR-026): an archive assembled from several
+sources holds the same person more than once, and the moment to resolve that
+is after import, with both records visible — not at entry time, where the
+per-contact `find_duplicates` warning already exists.
+
+Detection (`yanuka-db::merge::list_duplicate_pairs`) pairs contacts by shared
+phone (last-7 digits), shared normalized email, or identical normalized name,
+strongest signal first. It only ever *suggests*: the screen shows the pair
+with its evidence and the user decides, including "אלו אנשים שונים".
+
+Merge (`merge_contacts`) is governed by priority 1, מידע לא הולך לאיבוד:
+children move to the kept contact (only exact value-duplicates are skipped —
+suffix-based dedupe could silently drop a genuinely different number sharing
+a local suffix); blank scalars fill from the merged side; conflicting scalars
+are preserved as labeled notes lines; relationship edges re-point; and the
+merged contact is soft-deleted with its complete prior state in the mutation
+log. The same semantics are implemented in MockRepository and pinned by the
+repository contract tests, so the browser build behaves like the desktop.

@@ -12,6 +12,7 @@
 pub mod connection;
 pub mod error;
 pub mod index;
+pub mod merge;
 pub mod migrate;
 pub mod models;
 pub mod mutation;
