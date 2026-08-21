@@ -9,6 +9,7 @@
 //! cargo test -p yanuka-db -p yanuka-search
 //! ```
 
+pub mod backup;
 pub mod connection;
 pub mod error;
 pub mod index;

@@ -230,5 +230,8 @@ export const IPC_COMMANDS = [
   'update_note',
   'delete_note',
   'database_stats',
+  'backup_database',
+  'backup_status',
+  'save_exported_csv',
   'audit_log',
 ] as const;

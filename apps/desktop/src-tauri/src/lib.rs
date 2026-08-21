@@ -35,6 +35,15 @@ pub fn run() {
             }
 
             let state = AppState::open(&database_path)?;
+            // One backup per day, on launch. A failure here must never keep
+            // the user from their data — it is reported, not fatal.
+            state.with(|connection| {
+                match yanuka_db::backup::daily_backup(connection, &database_path, 7) {
+                    Ok(Some(path)) => eprintln!("daily backup: {}", path.display()),
+                    Ok(None) => {}
+                    Err(error) => eprintln!("daily backup failed: {error}"),
+                }
+            });
             app.manage(state);
             Ok(())
         })
@@ -70,6 +79,9 @@ pub fn run() {
             commands::update_note,
             commands::delete_note,
             commands::database_stats,
+            commands::backup_database,
+            commands::backup_status,
+            commands::save_exported_csv,
             commands::audit_log,
         ])
         .run(tauri::generate_context!())

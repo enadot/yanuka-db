@@ -519,3 +519,58 @@ fn merge_refuses_self_and_missing() {
     );
     assert!(yanuka_db::merge::merge_contacts(&mut connection, &a.contact.id, "01MISSING").is_err());
 }
+
+#[test]
+fn backup_snapshots_a_live_database_and_rotates_dailies() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("contacts.db");
+    let mut connection = yanuka_db::open(&db_path, None).unwrap();
+    migrate(&mut connection).unwrap();
+    repository::create_contact(&mut connection, &contact("אברהם כהן"), None).unwrap();
+
+    // A same-day second call is a no-op; the snapshot itself must be a
+    // complete, openable database.
+    let taken = yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap();
+    let target = taken.expect("first daily backup should be taken");
+    assert!(yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap().is_none());
+
+    let restored = yanuka_db::open(&target, None).unwrap();
+    let count: i64 =
+        restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+    assert!(yanuka_db::backup::last_backup_at(&db_path).is_some());
+
+    // Rotation: plant older dailies and re-prune via a fresh backup dir scan.
+    let backups = db_path.parent().unwrap().join("backups");
+    for day in ["2020-01-01", "2020-01-02", "2020-01-03"] {
+        std::fs::write(backups.join(format!("daily-{day}.db")), b"x").unwrap();
+    }
+    // Force a new backup by removing today's, with keep=2.
+    std::fs::remove_file(&target).unwrap();
+    yanuka_db::backup::daily_backup(&connection, &db_path, 2).unwrap().unwrap();
+    let dailies: Vec<_> = std::fs::read_dir(&backups)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("daily-") && n.ends_with(".db"))
+        .collect();
+    assert_eq!(dailies.len(), 2);
+    assert!(!dailies.iter().any(|n| n.contains("2020-01-01")));
+}
+
+#[test]
+fn on_demand_backup_writes_to_an_arbitrary_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("contacts.db");
+    let mut connection = yanuka_db::open(&db_path, None).unwrap();
+    migrate(&mut connection).unwrap();
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+
+    // Nested directory that does not exist yet — a fresh USB stick path.
+    let target = dir.path().join("usb").join("גיבוי-מאגר.db");
+    yanuka_db::backup::backup_to(&connection, &target).unwrap();
+    let restored = yanuka_db::open(&target, None).unwrap();
+    let count: i64 =
+        restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+}

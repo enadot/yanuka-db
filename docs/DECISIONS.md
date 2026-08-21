@@ -277,3 +277,28 @@ are preserved as labeled notes lines; relationship edges re-point; and the
 merged contact is soft-deleted with its complete prior state in the mutation
 log. The same semantics are implemented in MockRepository and pinned by the
 repository contract tests, so the browser build behaves like the desktop.
+
+## ADR-028 — Daily rotating backups and a round-tripping CSV export
+
+The archive exists as one SQLite file on one frequently-offline machine, with
+no sync and no cloud (ADR-019 deferred them). Until a server exists, backup
+*is* the durability story, so it cannot remain a manual habit.
+
+Three layers, all offline:
+- **Automatic**: one backup per calendar day, taken at launch via SQLite's
+  online-backup API (consistent while the database is open, WAL included),
+  named `daily-<date>.db` beside the pre-migration copies, seven kept. A
+  failed backup is reported and never blocks startup — the user's access to
+  their data outranks the safety net.
+- **On demand**: הגדרות ← "גיבוי עכשיו" snapshots to a user-chosen path,
+  typically a USB stick. Same API, arbitrary destination.
+- **Portable**: CSV export whose Hebrew headers are exactly what the import
+  auto-detection recognizes, so an exported file re-imports with the mapping
+  already correct — pinned by a round-trip test. The BOM is for Excel. What
+  CSV cannot carry (relationship edges, organization links, note metadata)
+  lives in the database backups; the CSV is the human-readable snapshot.
+
+The export walks the repository like any screen (no SQL side door), which is
+why the browser build exports identically via a Blob download. The desktop
+write path is a deliberately narrow command — `.csv` paths only — rather than
+a general file-write IPC: the webview is not a trust boundary.
