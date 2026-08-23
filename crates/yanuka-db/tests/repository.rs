@@ -4,7 +4,9 @@
 //! needs a webview or a Tauri toolchain, which is the whole reason the storage
 //! layer is a separate crate.
 
-use yanuka_db::models::{ContactInput, PhoneInput, SearchQuery};
+use yanuka_db::models::{
+    ContactInput, ContactPatch, EmailInput, OrganizationLinkInput, PhoneInput, SearchQuery,
+};
 use yanuka_db::{migrate, open_in_memory, repository, search, taxonomy};
 
 fn db() -> yanuka_db::rusqlite::Connection {
@@ -15,6 +17,10 @@ fn db() -> yanuka_db::rusqlite::Connection {
 
 fn contact(display_name: &str) -> ContactInput {
     ContactInput { display_name: display_name.to_string(), ..Default::default() }
+}
+
+fn rename(display_name: &str) -> ContactPatch {
+    ContactPatch { display_name: Some(display_name.to_string()), ..Default::default() }
 }
 
 #[test]
@@ -78,14 +84,105 @@ fn refuses_an_update_based_on_a_stale_version() {
     let mut connection = db();
     let created = repository::create_contact(&mut connection, &contact("גרסאות"), None).unwrap();
 
-    let mut changed = contact("גרסאות");
-    changed.city = Some("ירושלים".into());
+    let changed = ContactPatch { city: Some(Some("ירושלים".into())), ..Default::default() };
     repository::update_contact(&mut connection, &created.contact.id, &changed, Some(1)).unwrap();
 
     // Second write still thinks it is editing version 1.
     let result =
         repository::update_contact(&mut connection, &created.contact.id, &changed, Some(1));
     assert!(matches!(result, Err(yanuka_db::DbError::StaleVersion { .. })));
+}
+
+#[test]
+fn a_patch_leaves_untouched_collections_alone() {
+    // The bug this pins: a write replaces the child collections wholesale, so
+    // a screen that renders phones but not e-mail addresses used to delete
+    // every address on save. Priority 1 — מידע לא הולך לאיבוד.
+    let mut connection = db();
+    let mut input = contact("שומר על מה שלא נגעו בו");
+    input.emails = vec![EmailInput { address: "a@example.com".into(), ..Default::default() }];
+    input.aliases = vec![yanuka_db::models::AliasInput {
+        value: "אברהמ׳ל".into(),
+        ..Default::default()
+    }];
+    input.languages = vec!["he".into()];
+    input.specialties = vec!["סת\"ם".into()];
+    let created = repository::create_contact(&mut connection, &input, None).unwrap();
+
+    // A patch that only knows about phones.
+    let patch = ContactPatch {
+        phones: Some(vec![PhoneInput { raw: "054-5550134".into(), ..Default::default() }]),
+        ..Default::default()
+    };
+    let updated =
+        repository::update_contact(&mut connection, &created.contact.id, &patch, None).unwrap();
+
+    assert_eq!(updated.phones.len(), 1);
+    assert_eq!(updated.emails.len(), 1, "an untouched collection must survive the write");
+    assert_eq!(updated.aliases.len(), 1);
+    assert_eq!(updated.languages, vec!["he".to_string()]);
+    assert_eq!(updated.specialties.len(), 1);
+}
+
+#[test]
+fn a_patch_that_nulls_a_scalar_clears_it() {
+    let mut connection = db();
+    let mut input = contact("עיר שהוסרה");
+    input.city = Some("ירושלים".into());
+    input.profession = Some("סופר".into());
+    let created = repository::create_contact(&mut connection, &input, None).unwrap();
+
+    let patch: ContactPatch = serde_json::from_str(r#"{"city": null}"#).unwrap();
+    let updated =
+        repository::update_contact(&mut connection, &created.contact.id, &patch, None).unwrap();
+
+    assert!(updated.contact.city.is_none());
+    assert_eq!(updated.contact.profession.as_deref(), Some("סופר"));
+}
+
+#[test]
+fn a_patch_that_sends_an_empty_collection_clears_it() {
+    // The other half of the distinction: absent means untouched, empty means
+    // the user actually removed everything.
+    let mut connection = db();
+    let mut input = contact("ריקון מכוון");
+    input.emails = vec![EmailInput { address: "a@example.com".into(), ..Default::default() }];
+    let created = repository::create_contact(&mut connection, &input, None).unwrap();
+
+    let patch = ContactPatch { emails: Some(vec![]), ..Default::default() };
+    let updated =
+        repository::update_contact(&mut connection, &created.contact.id, &patch, None).unwrap();
+    assert!(updated.emails.is_empty());
+}
+
+#[test]
+fn links_a_contact_to_an_organization() {
+    let mut connection = db();
+    let organization =
+        taxonomy::create_organization(&connection, "ישיבת מיר", "yeshiva", Some("ירושלים"), None)
+            .unwrap();
+
+    let mut input = contact("ראש הישיבה");
+    input.organizations = vec![OrganizationLinkInput {
+        organization_id: organization.id.clone(),
+        role: Some("ראש ישיבה".into()),
+        ..Default::default()
+    }];
+    let created = repository::create_contact(&mut connection, &input, None).unwrap();
+
+    assert_eq!(created.organizations.len(), 1);
+    assert_eq!(created.organizations[0].organization.name, "ישיבת מיר");
+    assert_eq!(created.organizations[0].role.as_deref(), Some("ראש ישיבה"));
+
+    // And the link survives an edit that says nothing about organizations.
+    let updated = repository::update_contact(
+        &mut connection,
+        &created.contact.id,
+        &rename("ראש הישיבה שליט\"א"),
+        None,
+    )
+    .unwrap();
+    assert_eq!(updated.organizations.len(), 1);
 }
 
 #[test]
@@ -115,7 +212,7 @@ fn every_write_appends_to_the_mutation_log() {
     // offline would silently never reach another device.
     let mut connection = db();
     let created = repository::create_contact(&mut connection, &contact("יומן"), None).unwrap();
-    repository::update_contact(&mut connection, &created.contact.id, &contact("יומן שונה"), None)
+    repository::update_contact(&mut connection, &created.contact.id, &rename("יומן שונה"), None)
         .unwrap();
     repository::delete_contact(&mut connection, &created.contact.id).unwrap();
 
@@ -573,4 +670,14 @@ fn on_demand_backup_writes_to_an_arbitrary_target() {
     let count: i64 =
         restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn an_explicit_null_in_a_patch_clears_the_field() {
+    // Serde collapses `null` into the outer `None` for a nested Option unless
+    // told otherwise, which would make "clear this field" indistinguishable
+    // from "leave it alone" — and the form sends null to clear.
+    let patch: ContactPatch = serde_json::from_str(r#"{"city": null}"#).unwrap();
+    assert_eq!(patch.city, Some(None), "an explicit null must reach the field as a clear");
+    assert_eq!(patch.region, None, "an absent key must stay untouched");
 }

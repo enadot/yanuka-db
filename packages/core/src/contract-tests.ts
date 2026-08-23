@@ -240,6 +240,131 @@ export function runRepositoryContractTests(
       expect(fromB?.relationships.some((edge) => edge.otherContact.id === a.id)).toBe(true);
     });
 
+    it('leaves a collection the patch never mentions alone', async () => {
+      // A write replaces the child collections wholesale, so a patch that
+      // omits a collection has to mean "untouched" and not "empty". Otherwise
+      // every save from a screen that renders phones but not e-mail addresses
+      // deletes the addresses — priority 1, מידע לא הולך לאיבוד.
+      const repo = await makeRepository();
+      const created = await repo.createContact({
+        ...blankContact,
+        displayName: 'שומר על מה שלא נגעו בו',
+        emails: [{ kind: 'personal', address: 'a@example.com', isPrimary: true }],
+        aliases: [{ kind: 'alias', value: 'אברהמ׳ל', languageCode: null }],
+        languages: ['he'],
+        specialties: ['סת"ם'],
+      });
+
+      const updated = await repo.updateContact(created.id, {
+        phones: [{ kind: 'mobile', raw: '054-5550134', label: null, isPrimary: true }],
+      });
+
+      expect(updated.phones).toHaveLength(1);
+      expect(updated.emails).toHaveLength(1);
+      expect(updated.aliases).toHaveLength(1);
+      expect(updated.languages).toEqual(['he']);
+      expect(updated.specialties).toHaveLength(1);
+    });
+
+    it('clears a scalar the patch explicitly nulls', async () => {
+      // `null` means "the user emptied this box"; an absent key means "the
+      // screen never showed it". Conflating the two makes a cleared field
+      // impossible to save.
+      const repo = await makeRepository();
+      const created = await repo.createContact({
+        ...blankContact,
+        displayName: 'עיר שהוסרה',
+        city: 'ירושלים',
+        profession: 'סופר',
+      });
+
+      const updated = await repo.updateContact(created.id, { city: null });
+      expect(updated.city).toBeNull();
+      expect(updated.profession).toBe('סופר');
+    });
+
+    it('clears a collection the patch explicitly empties', async () => {
+      const repo = await makeRepository();
+      const created = await repo.createContact({
+        ...blankContact,
+        displayName: 'ריקון מכוון',
+        emails: [{ kind: 'personal', address: 'a@example.com', isPrimary: true }],
+      });
+
+      const updated = await repo.updateContact(created.id, { emails: [] });
+      expect(updated.emails).toHaveLength(0);
+    });
+
+    it('links a contact to an organization and keeps the link across an edit', async () => {
+      const repo = await makeRepository();
+      const organization = await repo.createOrganization({
+        name: 'ישיבת מיר',
+        kind: 'yeshiva',
+        city: 'ירושלים',
+        region: null,
+        country: 'IL',
+        address: null,
+        notes: null,
+      });
+
+      const created = await repo.createContact({
+        ...blankContact,
+        displayName: 'ראש הישיבה',
+        organizations: [
+          {
+            organizationId: organization.id,
+            role: 'ראש ישיבה',
+            isPrimary: true,
+            startedAt: null,
+            endedAt: null,
+          },
+        ],
+      });
+
+      expect(created.organizations).toHaveLength(1);
+      expect(created.organizations[0]!.organization.name).toBe('ישיבת מיר');
+      expect(created.organizations[0]!.role).toBe('ראש ישיבה');
+
+      const updated = await repo.updateContact(created.id, { city: 'ירושלים' });
+      expect(updated.organizations).toHaveLength(1);
+    });
+
+    it('adds, edits and removes a timestamped note', async () => {
+      const repo = await makeRepository();
+      const created = await repo.createContact({ ...blankContact, displayName: 'בעל הערות' });
+
+      const note = await repo.addNote({
+        contactId: created.id,
+        body: 'הכיר לנו את הרב מלונדון',
+        isSensitive: false,
+      });
+      expect((await repo.getContact(created.id))?.contactNotes).toHaveLength(1);
+
+      await repo.updateNote(note.id, 'הכיר לנו את הרב ממנצ׳סטר');
+      const afterEdit = await repo.getContact(created.id);
+      expect(afterEdit?.contactNotes[0]!.body).toContain('מנצ׳סטר');
+
+      await repo.deleteNote(note.id);
+      expect((await repo.getContact(created.id))?.contactNotes).toHaveLength(0);
+    });
+
+    it('removes a relationship from both endpoints', async () => {
+      const repo = await makeRepository();
+      const a = await repo.createContact({ ...blankContact, displayName: 'צד א' });
+      const b = await repo.createContact({ ...blankContact, displayName: 'צד ב' });
+
+      const edge = await repo.createRelationship({
+        fromContactId: a.id,
+        toContactId: b.id,
+        type: 'knows',
+        notes: null,
+      });
+      await repo.deleteRelationship(edge.id);
+
+      expect((await repo.getContact(a.id))?.relationships).toHaveLength(0);
+      expect((await repo.getContact(b.id))?.relationships).toHaveLength(0);
+    });
+
     it('finds duplicate pairs and merges without losing data', async () => {
       const repo = await makeRepository();
       const keep = await repo.createContact({

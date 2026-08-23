@@ -159,6 +159,77 @@ pub struct ContactInput {
     pub languages: Vec<String>,
     pub tag_ids: Vec<Ulid>,
     pub category_ids: Vec<Ulid>,
+    pub organizations: Vec<OrganizationLinkInput>,
+}
+
+/// Deserialize a nested `Option` so that `null` and "absent" stay distinct.
+///
+/// Serde collapses an explicit `null` into the *outer* `None`, which would make
+/// "clear the city" read exactly like "do not touch the city" — and the form
+/// sends `null` to clear. Everything the `ContactPatch` type exists for depends
+/// on the two staying apart, so the nullable scalars deserialize through here.
+fn double_option<'de, T, D>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).map(Some)
+}
+
+/// A patch as the edit form sends it: mirrors `ContactInputSchema.partial()`.
+///
+/// Every field is `Option` and `None` means *untouched*, which is the whole
+/// point of the type. `ContactInput` is `#[serde(default)]`, so a payload that
+/// simply omits `emails` deserializes into an empty vector — and since a write
+/// replaces a contact's child collections wholesale, that silently deletes
+/// every address the form did not happen to render. An absent field and an
+/// emptied field must be distinguishable at the boundary or priority 1,
+/// מידע לא הולך לאיבוד, is decided by which inputs a screen was built with.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ContactPatch {
+    #[serde(default, deserialize_with = "double_option")]
+    pub first_name: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub last_name: Option<Option<String>>,
+    pub display_name: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub prefix: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub title: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub country: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub region: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub city: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub address: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub postal_code: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub profession: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub role: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub notes: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub reason_for_saving: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub source: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub introduced_by: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub introduced_by_contact_id: Option<Option<Ulid>>,
+    pub is_favorite: Option<bool>,
+    pub phones: Option<Vec<PhoneInput>>,
+    pub emails: Option<Vec<EmailInput>>,
+    pub aliases: Option<Vec<AliasInput>>,
+    pub specialties: Option<Vec<String>>,
+    pub languages: Option<Vec<String>>,
+    pub tag_ids: Option<Vec<Ulid>>,
+    pub category_ids: Option<Vec<Ulid>>,
+    pub organizations: Option<Vec<OrganizationLinkInput>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -187,6 +258,17 @@ pub struct AliasInput {
     pub kind: Option<String>,
     pub value: String,
     pub language_code: Option<String>,
+}
+
+/// A contact's membership in an organization, as the form submits it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OrganizationLinkInput {
+    pub organization_id: Ulid,
+    pub role: Option<String>,
+    pub is_primary: bool,
+    pub started_at: Option<IsoDateTime>,
+    pub ended_at: Option<IsoDateTime>,
 }
 
 /// A contact joined with every child collection — what the detail screen shows.

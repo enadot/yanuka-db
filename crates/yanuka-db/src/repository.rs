@@ -183,6 +183,7 @@ fn write_children(
         "contact_languages",
         "contact_tags",
         "contact_categories",
+        "contact_organizations",
     ] {
         tx.execute(&format!("DELETE FROM {table} WHERE contact_id = ?1"), params![contact_id])?;
     }
@@ -293,7 +294,151 @@ fn write_children(
         )?;
     }
 
+    for (index, link) in input.organizations.iter().enumerate() {
+        if link.organization_id.trim().is_empty() {
+            continue;
+        }
+        tx.execute(
+            "INSERT INTO contact_organizations (id, contact_id, organization_id, role, is_primary,
+                                                started_at, ended_at, created_at, updated_at,
+                                                version, device_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10)",
+            params![
+                new_id(),
+                contact_id,
+                link.organization_id.trim(),
+                link.role,
+                i64::from(link.is_primary || index == 0),
+                link.started_at,
+                link.ended_at,
+                now,
+                now,
+                device,
+            ],
+        )?;
+    }
+
     Ok(())
+}
+
+/// Everything a stored contact would submit if the form re-sent it unchanged.
+///
+/// The round-trip that makes a patch merge safe: a field the caller left out
+/// is refilled from here, so it is written back exactly as it was rather than
+/// being dropped by the child-collection replace.
+fn as_input(stored: &ContactWithRelations) -> ContactInput {
+    ContactInput {
+        first_name: stored.contact.first_name.clone(),
+        last_name: stored.contact.last_name.clone(),
+        display_name: stored.contact.display_name.clone(),
+        prefix: stored.contact.prefix.clone(),
+        title: stored.contact.title.clone(),
+        country: stored.contact.country.clone(),
+        region: stored.contact.region.clone(),
+        city: stored.contact.city.clone(),
+        address: stored.contact.address.clone(),
+        postal_code: stored.contact.postal_code.clone(),
+        profession: stored.contact.profession.clone(),
+        role: stored.contact.role.clone(),
+        notes: stored.contact.notes.clone(),
+        reason_for_saving: stored.contact.reason_for_saving.clone(),
+        source: stored.contact.source.clone(),
+        introduced_by: stored.contact.introduced_by.clone(),
+        introduced_by_contact_id: stored.contact.introduced_by_contact_id.clone(),
+        is_favorite: stored.contact.is_favorite,
+        phones: stored
+            .phones
+            .iter()
+            .map(|phone| PhoneInput {
+                id: Some(phone.id.clone()),
+                kind: Some(phone.kind.clone()),
+                raw: phone.raw.clone(),
+                label: phone.label.clone(),
+                is_primary: phone.is_primary,
+            })
+            .collect(),
+        emails: stored
+            .emails
+            .iter()
+            .map(|email| EmailInput {
+                id: Some(email.id.clone()),
+                kind: Some(email.kind.clone()),
+                address: email.address.clone(),
+                is_primary: email.is_primary,
+            })
+            .collect(),
+        aliases: stored
+            .aliases
+            .iter()
+            .map(|alias| AliasInput {
+                id: Some(alias.id.clone()),
+                kind: Some(alias.kind.clone()),
+                value: alias.value.clone(),
+                language_code: alias.language_code.clone(),
+            })
+            .collect(),
+        specialties: stored.specialties.clone(),
+        languages: stored.languages.clone(),
+        tag_ids: stored.tags.iter().map(|tag| tag.id.clone()).collect(),
+        category_ids: stored.categories.iter().map(|category| category.id.clone()).collect(),
+        organizations: stored
+            .organizations
+            .iter()
+            .map(|link| OrganizationLinkInput {
+                organization_id: link.organization_id.clone(),
+                role: link.role.clone(),
+                is_primary: link.is_primary,
+                started_at: link.started_at.clone(),
+                ended_at: link.ended_at.clone(),
+            })
+            .collect(),
+    }
+}
+
+/// Apply a patch to what is already stored.
+///
+/// `None` means the caller did not touch the field, `Some` means it did — the
+/// distinction the `ContactPatch` type exists to carry. A screen therefore only
+/// has to know about the fields it actually shows.
+fn apply_patch(mut base: ContactInput, patch: &ContactPatch) -> ContactInput {
+    macro_rules! set {
+        ($($field:ident),* $(,)?) => {
+            $(if let Some(value) = patch.$field.clone() {
+                base.$field = value;
+            })*
+        };
+    }
+
+    set!(
+        first_name,
+        last_name,
+        display_name,
+        prefix,
+        title,
+        country,
+        region,
+        city,
+        address,
+        postal_code,
+        profession,
+        role,
+        notes,
+        reason_for_saving,
+        source,
+        introduced_by,
+        introduced_by_contact_id,
+        is_favorite,
+        phones,
+        emails,
+        aliases,
+        specialties,
+        languages,
+        tag_ids,
+        category_ids,
+        organizations,
+    );
+
+    base
 }
 
 /// Update a contact.
@@ -301,26 +446,30 @@ fn write_children(
 /// When `base_version` is supplied and no longer current, the write is refused.
 /// That turns a silent lost update into a visible conflict the user can resolve
 /// — the alternative is losing whichever edit arrived first, with no trace.
+///
+/// The patch is merged onto the stored record before it is written, because the
+/// write itself replaces the child collections wholesale (`write_children`).
+/// Merging first is what stops a form that renders phones but not e-mail
+/// addresses from deleting the addresses every time it saves.
 pub fn update_contact(
     connection: &mut Connection,
     id: &str,
-    input: &ContactInput,
+    patch: &ContactPatch,
     base_version: Option<i64>,
 ) -> Result<ContactWithRelations> {
-    validate(input)?;
-
-    let current: (i64, String) = connection
-        .query_row("SELECT version, display_name FROM contacts WHERE id = ?1", params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
-        .optional()?
-        .ok_or_else(|| DbError::NotFound("איש הקשר".into()))?;
+    let stored =
+        get_contact(connection, id)?.ok_or_else(|| DbError::NotFound("איש הקשר".into()))?;
+    let current = (stored.contact.version, stored.contact.display_name.clone());
 
     if let Some(expected) = base_version {
         if expected != current.0 {
             return Err(DbError::StaleVersion { expected, actual: current.0 });
         }
     }
+
+    let merged = apply_patch(as_input(&stored), patch);
+    let input = &merged;
+    validate(input)?;
 
     let device = device_id(connection)?;
     let now = now_iso();

@@ -126,7 +126,7 @@ pub fn quick_add_contact(
 pub fn update_contact(
     state: State<'_, AppState>,
     id: String,
-    patch: ContactInput,
+    patch: ContactPatch,
     base_version: Option<i64>,
 ) -> Answer<ContactWithRelations> {
     state.with(|connection| repository::update_contact(connection, &id, &patch, base_version))
