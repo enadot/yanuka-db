@@ -302,3 +302,69 @@ The export walks the repository like any screen (no SQL side door), which is
 why the browser build exports identically via a Blob download. The desktop
 write path is a deliberately narrow command — `.csv` paths only — rather than
 a general file-write IPC: the webview is not a trust boundary.
+
+## ADR-029 — A patch says what changed; absent, `null` and `[]` are three things
+
+The bug this fixes was invisible and total. A write replaces a contact's child
+collections wholesale (`write_children`), and the edit form rebuilt its state
+from a blank template that carried phones and tags but not e-mail addresses,
+aliases, languages, categories or organization links. So every save deleted all
+five, silently, on a screen that showed no sign anything had been touched.
+Priority 1 — מידע לא הולך לאיבוד — was being decided by which inputs a screen
+happened to render.
+
+Two boundaries were conflating states that have to stay apart:
+
+- **Absent vs. empty.** `ContactInput` is `#[serde(default)]`, so a payload that
+  omits `emails` arrives as `[]` and wipes the addresses. `update_contact` now
+  takes a `ContactPatch` whose every field is an `Option` and merges it onto the
+  stored record before writing. Absent means untouched; `[]` means the user
+  actually removed everything.
+- **Absent vs. `null`.** Serde collapses an explicit `null` into the outer
+  `None` of a nested `Option`, and TypeScript's `??` treats `null` and
+  `undefined` alike — so on both sides "clear the city" read as "leave the city
+  alone", and a cleared field could not be saved. The Rust patch deserializes
+  its nullable scalars through a `double_option` helper; `MockRepository` merges
+  on key presence rather than `??`. Both are pinned by tests, in both languages.
+
+The form is fixed as well as the boundary. It now loads and returns every
+collection, including the ones it has no control for, because a boundary that
+tolerates a careless caller is not a licence to write one.
+
+## ADR-030 — The connection graph is writable from the card
+
+`crates/yanuka-db` has stored relationships, timestamped notes and
+contact–organization memberships since the first migration, the repository
+interface has exposed them since the first commit, and the contact card has
+displayed them all along. Nothing could create one. The graph was demo data.
+
+That is the wrong gap to leave open in *this* product. "מי היה היהודי הזה
+מלונדון שהרב המליץ עליו?" is a question about an edge and about a sentence
+someone wrote down years ago — the two things a user is most likely to remember
+were the two things they could not record.
+
+- **Relationships** are added from the card, and both readings of every
+  asymmetric type are offered. An edge is stored once and directed, but the
+  person entering it is standing on one particular card: from the recommended
+  contact the natural sentence is "הומלץ על ידי הרב", and offering only the
+  outgoing phrasing would force the user to work out which of two cards the
+  relationship belongs to before they could write it down. Picking a reversed
+  reading simply swaps the endpoints on save. The far end is chosen from search
+  results, never typed — an edge to a name-shaped string is not traversable and
+  would answer "who else did he recommend" with nothing.
+- **Notes** are added, edited and deleted in place. They stay separate from
+  `contacts.notes`, the single always-visible remark, so a new dated entry never
+  has to be appended to an existing paragraph — which is how the date of the
+  original remark gets lost. They are indexed like every other note, so a
+  sentence written here answers the question the archive exists for.
+- **Organization links** are search-then-create. "ישיבת מיר" typed three
+  different ways is three institutions, and the archive stops being able to
+  answer "who else is from there"; but refusing to save until the user goes and
+  defines the institution first is exactly the friction that keeps a
+  half-remembered detail out of the database. So the picker searches existing
+  organizations and offers to create the one being typed, inline. SQLite also
+  had to start *writing* `contact_organizations` — it only ever read them.
+
+All of it goes through `ContactsRepository`, so the browser build behaves
+identically, the contract tests pin both implementations, and the e2e suite
+exercises the flows without a Tauri shell.

@@ -37,6 +37,7 @@ import {
   Textarea,
 } from '@yanuka/ui';
 import { useContact, useCreateContact, useTags, useUpdateContact } from '../hooks/use-contacts';
+import { OrganizationPicker } from '../components/contact/organization-picker';
 import { useRepository } from '../lib/repository';
 import { useDebouncedValue } from '../hooks/use-debounced-value';
 
@@ -116,6 +117,8 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
   });
 
   const phones = useFieldArray({ control: form.control, name: 'phones' });
+  const emails = useFieldArray({ control: form.control, name: 'emails' });
+  const aliases = useFieldArray({ control: form.control, name: 'aliases' });
 
   useEffect(() => {
     if (mode !== 'edit' || !existing) return;
@@ -145,8 +148,33 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
         label: phone.label,
         isPrimary: phone.isPrimary,
       })),
+      emails: existing.emails.map((email) => ({
+        id: email.id,
+        kind: email.kind,
+        address: email.address,
+        isPrimary: email.isPrimary,
+      })),
+      aliases: existing.aliases.map((alias) => ({
+        id: alias.id,
+        kind: alias.kind,
+        value: alias.value,
+        languageCode: alias.languageCode,
+      })),
       specialties: existing.specialties,
+      // Loaded even though the form has no control for them. A save replaces a
+      // contact's child collections wholesale, so anything the form does not
+      // carry back it deletes — and a language or a category is exactly the
+      // kind of detail nobody notices is gone. Priority 1, מידע לא הולך לאיבוד.
+      languages: existing.languages,
       tagIds: existing.tags.map((tag) => tag.id),
+      categoryIds: existing.categories.map((category) => category.id),
+      organizations: existing.organizations.map((link) => ({
+        organizationId: link.organizationId,
+        role: link.role,
+        isPrimary: link.isPrimary,
+        startedAt: link.startedAt,
+        endedAt: link.endedAt,
+      })),
     });
   }, [existing, form, mode]);
 
@@ -222,6 +250,10 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
   }
 
   const selectedTags = form.watch('tagIds') ?? [];
+  // The picker owns the whole list, so it is read and written as one value
+  // rather than through a field array — there are no per-row form controls
+  // for a membership beyond the role, which the picker renders itself.
+  const organizationLinks = form.watch('organizations') ?? [];
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-6">
@@ -404,6 +436,103 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
           </Card>
 
           <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="text-base">אימייל</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  emails.append({
+                    kind: 'personal',
+                    address: '',
+                    isPrimary: emails.fields.length === 0,
+                  })
+                }
+              >
+                <Plus className="size-4" aria-hidden />
+                הוספת כתובת
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {emails.fields.map((field, index) => (
+                <div key={field.id} className="flex items-end gap-2">
+                  <FormField
+                    control={form.control}
+                    name={`emails.${index}.address`}
+                    render={({ field: addressField }) => (
+                      <FormItem className="flex-1">
+                        <FormControl>
+                          <Input
+                            className="ltr-inline"
+                            placeholder="name@example.com"
+                            {...addressField}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="הסרת כתובת"
+                    onClick={() => emails.remove(index)}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle className="text-base">שמות נוספים</CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => aliases.append({ kind: 'alias', value: '', languageCode: null })}
+              >
+                <Plus className="size-4" aria-hidden />
+                הוספת שם
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                כינוי, תעתיק לועזי, או איך שנהוג לקרוא לו. כל שם נוסף הוא עוד דרך למצוא אותו.
+              </p>
+              {aliases.fields.map((field, index) => (
+                <div key={field.id} className="flex items-end gap-2">
+                  <FormField
+                    control={form.control}
+                    name={`aliases.${index}.value`}
+                    render={({ field: valueField }) => (
+                      <FormItem className="flex-1">
+                        <FormControl>
+                          <Input placeholder="Friedman / פרידמאן" {...valueField} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="הסרת שם"
+                    onClick={() => aliases.remove(index)}
+                  >
+                    <Trash2 className="size-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader>
               <CardTitle className="text-base">מקום ומקצוע</CardTitle>
             </CardHeader>
@@ -471,6 +600,17 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
               />
             </CardContent>
           </Card>
+
+          <OrganizationPicker
+            value={organizationLinks.map((link, index) => ({
+              organizationId: link.organizationId,
+              role: link.role ?? null,
+              isPrimary: link.isPrimary ?? index === 0,
+              startedAt: link.startedAt ?? null,
+              endedAt: link.endedAt ?? null,
+            }))}
+            onChange={(next) => form.setValue('organizations', next, { shouldDirty: true })}
+          />
 
           <Card>
             <CardHeader>

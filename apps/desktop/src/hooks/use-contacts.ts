@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ContactInput, ListContactsInput, SearchInput } from '@yanuka/core';
+import type {
+  ContactInput,
+  ListContactsInput,
+  NoteInput,
+  OrganizationInput,
+  RelationshipInput,
+  SearchInput,
+} from '@yanuka/core';
 import type { Ulid } from '@yanuka/types';
 import { useRepository } from '../lib/repository';
 
@@ -176,6 +183,70 @@ export function useDeleteContact() {
   const invalidate = useInvalidateContacts();
   return useMutation({
     mutationFn: (id: Ulid) => repository.deleteContact(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateOrganization() {
+  const repository = useRepository();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OrganizationInput) => repository.createOrganization(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['organizations'] });
+      void queryClient.invalidateQueries({ queryKey: ['stats'] });
+    },
+  });
+}
+
+/**
+ * Relationship and note writes.
+ *
+ * They invalidate the same broad set as a contact edit because an edge belongs
+ * to two contacts and a note is indexed for search — narrowing this would show
+ * the far side of a new relationship a stale card.
+ */
+export function useCreateRelationship() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (input: RelationshipInput) => repository.createRelationship(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteRelationship() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.deleteRelationship(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (input: NoteInput) => repository.addNote(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: Ulid; body: string }) => repository.updateNote(id, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.deleteNote(id),
     onSuccess: invalidate,
   });
 }

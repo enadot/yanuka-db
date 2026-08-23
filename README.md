@@ -54,12 +54,22 @@ docs/               architecture, database, search, sync, security, decisions
 אימיילים ושמות; מיזוג מעביר הכול לרשומה הנשמרת, משמר שדות סותרים בהערות,
 ורושם את הרשומה הממוזגת במלואה ביומן השינויים. ADR-027.
 
+## Recording the connections
+
+כרטיס איש הקשר הוא גם מסך הכתיבה של הגרף: **קשרים** — מי המליץ, מי הכיר, מי
+תלמיד של מי, בשני הכיוונים ועם הערה על הקשר; **יומן הערות** — רשומות מתוארכות
+שנשמרות בנפרד מההערה הקבועה ונכנסות לאינדקס החיפוש; ו**מוסדות** — שיוך לישיבה,
+לבית כנסת או לארגון, עם יצירת מוסד חדש מתוך הטופס. ADR-030.
+
+עריכה לעולם אינה מוחקת מה שהטופס לא הציג: patch מבחין בין שדה שלא נגעו בו,
+שדה שרוקנו במכוון, ואוסף שנמחק כולו. ADR-029.
+
 ## Verification
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test   # 133 TypeScript tests
-cargo test -p yanuka-db -p yanuka-search   # 29 Rust tests
-pnpm --filter @yanuka/desktop test:e2e     # 11 Playwright tests in Chromium
+pnpm lint && pnpm typecheck && pnpm test   # 171 TypeScript tests
+cargo test -p yanuka-db -p yanuka-search   # 41 Rust tests
+pnpm --filter @yanuka/desktop test:e2e     # 19 Playwright tests in Chromium
 ```
 
 The migration tests run the **real** production `.sql` against real SQLite via

@@ -137,11 +137,11 @@ shape is documented here instead; ADR-017.
 
 | what | how | runs where |
 |---|---|---|
-| unit + integration (TS) | `pnpm test` — 133 tests | anywhere |
+| unit + integration (TS) | `pnpm test` — 171 tests | anywhere |
 | migrations + FTS5 | `node:sqlite` in vitest | anywhere |
-| storage + search (Rust) | `cargo test -p yanuka-db -p yanuka-search` — 29 tests | anywhere |
+| storage + search (Rust) | `cargo test -p yanuka-db -p yanuka-search` — 41 tests | anywhere |
 | normalizer conformance | shared JSON fixture, both languages | anywhere |
 | IPC name parity | regex over `commands.rs` vs `IPC_COMMANDS` | anywhere |
-| the real UI | Playwright + Chromium — 11 tests | anywhere |
+| the real UI | Playwright + Chromium — 19 tests | anywhere |
 | the Tauri shell compiles | `cargo check -p yanuka-desktop` | CI (ubuntu + apt deps) |
 | the installer builds | `tauri build` | CI (windows-latest) |
