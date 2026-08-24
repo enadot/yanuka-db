@@ -1,11 +1,13 @@
 # SYNC
 
-**Status: local recording implemented, transport not.** The mutation log,
-device registry, cursors and conflict tables ship, and every local change now
-appends a mutation carrying the change itself (ADR-033 — for a long time it
-carried only a display name, which would have made sync appear to work while
-delivering nothing). There is no network code, and no apply path yet. See
-ADR-019.
+**Status: both local halves implemented, transport not.** Every local change
+appends a mutation carrying the change itself (ADR-033), and `apply.rs` folds a
+mutation from another device into this one, merging per field and recording
+genuine collisions (ADR-034). `crates/yanuka-db/tests/sync.rs` runs two real
+databases and moves mutations between them by hand, which is what a sync engine
+will do once there is one.
+
+There is no network code. What remains is a courier. See ADR-019.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -98,6 +100,22 @@ entity type; the server returns everything changed after it plus a new cursor.
 A pulled change whose entity has pending local mutations is not applied blindly
 — it goes through the same merge as a rejected push.
 
+`apply::apply` is that merge, and it is already written. Its contract:
+
+| Outcome | Meaning |
+|---|---|
+| `Applied` | Written. |
+| `AlreadySeen` | The mutation id is already in the local log. At-least-once delivery makes this routine, not an error. |
+| `Conflicted(fields)` | Written except for those fields; both values are in `conflicts` and the local one stands. |
+| `Deferred` | The contact this belongs to has not arrived. **Nothing written, nothing recorded** — the next pass retries. |
+
+`Deferred` is the one a transport must handle correctly: a mutation that returns
+it has to stay in the queue. Acknowledging it would lose the note.
+
+Applying **never appends a local mutation**. A remote change written through the
+normal repository path would be pushed straight back, and the two devices would
+trade one edit forever.
+
 ## Conflicts
 
 Resolution is **per field**, not per record.
@@ -125,6 +143,16 @@ user is asked:
 Never resolved silently, and never by last-write-wins on a timestamp. Clocks on
 two machines that have been offline are not comparable, and picking a winner
 means throwing away something a human typed on purpose.
+
+The comparison that decides this is against `previous`, **not** against the
+version number. A version moves when any field changes, so it cannot tell
+"they edited the city while I edited the profession" from "we both edited the
+city". Only the prior value can.
+
+One exception, and it is a guard rather than a rule: a `create` arriving for a
+contact that already exists here carries no `previous` at all. It may fill a
+blank field; anything already filled is treated as a disagreement rather than
+overwritten.
 
 The governing rule, from PRODUCT.md: **a temporary duplicate is always better
 than lost data.** If the merge is ambiguous, keep both.
@@ -190,6 +218,7 @@ when sync arrives. Swap this back the moment a transport lands.
 
 ## Rules for anyone implementing this
 
+0. Applying a remote change never appends a local mutation.
 1. A local write must never wait on the network.
 2. A mutation is written in the same transaction as the change, or not at all.
 3. `payload` carries changed fields only. Sending whole records makes every edit
@@ -198,3 +227,5 @@ when sync arrives. Swap this back the moment a transport lands.
 5. Never resolve a conflict silently. Never resolve one by timestamp.
 6. Deletions are tombstones.
 7. When in doubt, keep both versions.
+8. A change whose subject has not arrived is deferred, never dropped — and an
+   edge waits for both of its ends.

@@ -537,3 +537,70 @@ The count-based test is kept and joined by four that read the payloads: that
 what the user typed is in the log, that an edit logs the field that moved and
 not the ones that did not, that every entity kind is logged, and that a merge
 carries the details it moved across.
+
+## ADR-034 — The apply path, and the four ways it refuses to lose data
+
+`apply.rs` takes a mutation made on another device and folds it into this one.
+It is the half of sync where data actually gets destroyed if the reasoning is
+wrong: the transport can only be slow or broken, but a bad merge is silent and
+permanent.
+
+**Applying never logs a mutation.** A remote change written through
+`update_contact` would append a local mutation, push it back, and the two
+devices would trade one edit forever. So the apply path writes through
+`insert_contact_row` / `update_contact_row`, extracted from the local path for
+this purpose and shared with it — one writer, so the two cannot drift into
+producing different rows for the same change.
+
+**Merging is per field, decided by `previous`, not by version.** A version
+number moves when *any* field changes, so it cannot distinguish "they edited
+the city while I edited the profession" from "we both edited the city". The
+mutation carries what the sender saw before its edit; if the local value still
+equals that, nothing here touched the field and theirs is simply newer. This is
+the entire reason ADR-033 had to land first — without a real `previous` there
+is no three-way merge, only a guess.
+
+**A genuine collision is never resolved silently.** Both values go to
+`conflicts` and the local one stays in place until a human picks. Not
+last-write-wins: two machines that have been offline do not have comparable
+clocks, and a timestamp is not evidence about which person was right.
+
+**A change whose subject has not arrived is deferred, not dropped.** A note or a
+relationship can reach a device before the contact it hangs off. Writing it
+violates a foreign key; skipping it loses it. `Applied::Deferred` returns it
+unapplied *and unrecorded*, so the next pass retries — and an edge specifically
+waits for **both** of its endpoints, because half an edge is worse than no edge:
+nothing will ever come back to repair it.
+
+Three further decisions worth naming:
+
+**A create landing on a contact that already exists only fills blanks.** A
+create carries the whole record and no `previous`, which makes it the one
+payload that could flatten local work. The mutation id normally stops a second
+delivery dead, but a log restored from backup or replayed through a rebuilt
+server can present the same contact under a fresh id. In that case an unfilled
+field may be filled and a filled one is treated as a disagreement. The test for
+this fails if the guard is removed, which was checked rather than assumed.
+
+**Names are the identity for tags, categories and organizations.** Two devices
+offline both adding "ישיבת מיר" mint different ids for one institution. Letting
+both land would split every facet count that mentions it and make "who else is
+from Mir" answer half the truth, so an incoming row whose normalized name is
+already present is dropped. Contacts deliberately do *not* work this way —
+two people really can share a name, and merging them is a decision for the
+duplicate-merge flow with a human present.
+
+**Delete cascades are reproduced, not shipped.** Following ADR-033, deleting a
+tag does not log the join rows it soft-deletes; the apply path re-runs the
+cascade from the parent id. This keeps the log proportional to what the user
+did rather than to how many contacts happened to carry the tag.
+
+Verified by `crates/yanuka-db/tests/sync.rs`, which runs two real databases and
+moves mutations between them by hand — the same thing a sync engine will do,
+without one existing yet. The load-bearing test is convergence: each device does
+a spread of independent work while out of contact, and after the logs are
+exchanged both describe the same archive.
+
+Still absent, by design: the transport (ADR-019), a UI for resolving conflicts,
+and any parity in `MockRepository`, which keeps a counter rather than a log
+because the browser build has nothing to sync with.

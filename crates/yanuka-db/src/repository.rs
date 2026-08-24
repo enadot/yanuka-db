@@ -92,20 +92,20 @@ fn validate(input: &ContactInput) -> Result<()> {
     Ok(())
 }
 
-/// Insert a contact and everything hanging off it.
-pub fn create_contact(
-    connection: &mut Connection,
+/// Write a new `contacts` row and its child collections.
+///
+/// Shared with the sync apply path, which has to produce byte-identical rows to
+/// a local create without appending a mutation of its own — echoing a remote
+/// change straight back to the device it came from is how a sync loop starts.
+/// Keeping one writer is what guarantees the two paths cannot drift.
+pub(crate) fn insert_contact_row(
+    tx: &rusqlite::Transaction<'_>,
+    contact_id: &str,
     input: &ContactInput,
-    id: Option<String>,
-) -> Result<ContactWithRelations> {
-    validate(input)?;
-
-    let device = device_id(connection)?;
-    // Caller-supplied so an offline create can be retried without duplicating.
-    let contact_id = id.unwrap_or_else(new_id);
-    let now = now_iso();
-
-    let tx = connection.transaction()?;
+    now: &str,
+    device: &str,
+    version: i64,
+) -> Result<()> {
     tx.execute(
         "INSERT INTO contacts (id, first_name, last_name, display_name, prefix, title,
                                normalized_name, country, region, city, address, postal_code,
@@ -113,7 +113,7 @@ pub fn create_contact(
                                reason_for_saving, source, introduced_by, introduced_by_contact_id,
                                is_favorite, created_at, updated_at, version, device_id)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                 ?18, ?19, ?20, ?21, ?22, ?23, ?24, 1, ?25)",
+                 ?18, ?19, ?20, ?21, ?22, ?23, ?23, ?24, ?25)",
         params![
             contact_id,
             input.first_name,
@@ -138,12 +138,80 @@ pub fn create_contact(
             input.introduced_by_contact_id,
             i64::from(input.is_favorite),
             now,
-            now,
+            version,
             device,
         ],
     )?;
+    write_children(tx, contact_id, input, now, device)
+}
 
-    write_children(&tx, &contact_id, input, &now, &device)?;
+/// Overwrite an existing `contacts` row and replace its child collections.
+///
+/// The counterpart to `insert_contact_row`, and shared with the apply path for
+/// the same reason.
+pub(crate) fn update_contact_row(
+    tx: &rusqlite::Transaction<'_>,
+    contact_id: &str,
+    input: &ContactInput,
+    now: &str,
+    device: &str,
+    version: i64,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE contacts
+            SET first_name = ?2, last_name = ?3, display_name = ?4, prefix = ?5, title = ?6,
+                normalized_name = ?7, country = ?8, region = ?9, city = ?10, address = ?11,
+                postal_code = ?12, normalized_city = ?13, profession = ?14, role = ?15,
+                normalized_profession = ?16, notes = ?17, reason_for_saving = ?18, source = ?19,
+                introduced_by = ?20, introduced_by_contact_id = ?21, is_favorite = ?22,
+                updated_at = ?23, version = ?24, device_id = ?25
+          WHERE id = ?1",
+        params![
+            contact_id,
+            input.first_name,
+            input.last_name,
+            input.display_name.trim(),
+            input.prefix,
+            input.title,
+            normalize_name(&input.display_name),
+            input.country,
+            input.region,
+            input.city,
+            input.address,
+            input.postal_code,
+            input.city.as_deref().map(normalize_text),
+            input.profession,
+            input.role,
+            input.profession.as_deref().map(normalize_text),
+            input.notes,
+            input.reason_for_saving,
+            input.source,
+            input.introduced_by,
+            input.introduced_by_contact_id,
+            i64::from(input.is_favorite),
+            now,
+            version,
+            device,
+        ],
+    )?;
+    write_children(tx, contact_id, input, now, device)
+}
+
+/// Insert a contact and everything hanging off it.
+pub fn create_contact(
+    connection: &mut Connection,
+    input: &ContactInput,
+    id: Option<String>,
+) -> Result<ContactWithRelations> {
+    validate(input)?;
+
+    let device = device_id(connection)?;
+    // Caller-supplied so an offline create can be retried without duplicating.
+    let contact_id = id.unwrap_or_else(new_id);
+    let now = now_iso();
+
+    let tx = connection.transaction()?;
+    insert_contact_row(&tx, &contact_id, input, &now, &device, 1)?;
 
     // The whole record, because a create has no prior state to diff against and
     // a device replaying this log has nothing else to build the contact from.
@@ -179,7 +247,7 @@ pub fn create_contact(
 /// Full replace rather than a per-row diff: the form submits the whole set, and
 /// reconciling identity across an unordered list of phone numbers costs more
 /// than it saves at this scale.
-fn write_children(
+pub(crate) fn write_children(
     tx: &rusqlite::Transaction<'_>,
     contact_id: &str,
     input: &ContactInput,
@@ -488,45 +556,7 @@ pub fn update_contact(
     let next_version = current.0 + 1;
 
     let tx = connection.transaction()?;
-    tx.execute(
-        "UPDATE contacts
-            SET first_name = ?2, last_name = ?3, display_name = ?4, prefix = ?5, title = ?6,
-                normalized_name = ?7, country = ?8, region = ?9, city = ?10, address = ?11,
-                postal_code = ?12, normalized_city = ?13, profession = ?14, role = ?15,
-                normalized_profession = ?16, notes = ?17, reason_for_saving = ?18, source = ?19,
-                introduced_by = ?20, introduced_by_contact_id = ?21, is_favorite = ?22,
-                updated_at = ?23, version = ?24, device_id = ?25
-          WHERE id = ?1",
-        params![
-            id,
-            input.first_name,
-            input.last_name,
-            input.display_name.trim(),
-            input.prefix,
-            input.title,
-            normalize_name(&input.display_name),
-            input.country,
-            input.region,
-            input.city,
-            input.address,
-            input.postal_code,
-            input.city.as_deref().map(normalize_text),
-            input.profession,
-            input.role,
-            input.profession.as_deref().map(normalize_text),
-            input.notes,
-            input.reason_for_saving,
-            input.source,
-            input.introduced_by,
-            input.introduced_by_contact_id,
-            i64::from(input.is_favorite),
-            now,
-            next_version,
-            device,
-        ],
-    )?;
-
-    write_children(&tx, id, input, &now, &device)?;
+    update_contact_row(&tx, id, input, &now, &device, next_version)?;
 
     // What actually moved, compared against the stored record rather than
     // against the patch: a patch that re-sends an unchanged field is not an
@@ -1003,4 +1033,23 @@ pub fn favorite_contacts(connection: &Connection, limit: i64) -> Result<Vec<Cont
         .query_map(params![limit], contact_from_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     contacts.into_iter().map(|c| summarize(connection, c)).collect()
+}
+
+/// One row of the mutation log, straight off the database.
+///
+/// Deliberately a separate struct from `apply::RemoteMutation`: the JSON columns
+/// arrive as `Option<String>` and only become values once parsed, and folding
+/// the two together would mean either parsing inside a rusqlite row callback —
+/// where the error type cannot carry a serde failure — or pretending the text is
+/// already structured.
+pub(crate) struct MutationRow {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub operation: String,
+    pub payload: Option<String>,
+    pub previous: Option<String>,
+    pub base_version: i64,
+    pub created_at: String,
+    pub device_id: String,
 }
