@@ -92,6 +92,14 @@ pub fn favorite_contacts(
 }
 
 #[tauri::command]
+pub fn deleted_contacts(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Answer<Vec<DeletedContact>> {
+    state.with(|connection| repository::deleted_contacts(connection, limit.unwrap_or(100)))
+}
+
+#[tauri::command]
 pub fn create_contact(
     state: State<'_, AppState>,
     input: ContactInput,

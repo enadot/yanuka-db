@@ -1,10 +1,4 @@
-import type {
-  CountryCode,
-  IsoDateTime,
-  LanguageCode,
-  SyncableEntity,
-  Ulid,
-} from './primitives.js';
+import type { CountryCode, IsoDateTime, LanguageCode, SyncableEntity, Ulid } from './primitives.js';
 
 /** How a phone number is used. Drives the call/WhatsApp affordances in the UI. */
 export const PHONE_KINDS = [
@@ -225,6 +219,19 @@ export interface ContactWithRelations extends Contact {
 }
 
 /** Lightweight projection used in lists, search results and relationship edges. */
+/**
+ * A soft-deleted contact, as the recycle bin lists it.
+ *
+ * `deletedAt` is carried explicitly rather than read off `updatedAt`: the two
+ * happen to coincide today because a delete touches both, and a screen that
+ * quietly depends on that would start showing wrong dates the first time
+ * anything else writes to a deleted row.
+ */
+export interface DeletedContact {
+  contact: ContactSummary;
+  deletedAt: IsoDateTime;
+}
+
 export interface ContactSummary {
   id: Ulid;
   displayName: string;

@@ -1,10 +1,20 @@
 import { invoke } from '@tauri-apps/api/core';
-import { toRepositoryError, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type DuplicatePair, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
+import {
+  toRepositoryError,
+  type ContactsRepository,
+  type DatabaseStats,
+  type DuplicateCandidate,
+  type DuplicatePair,
+  type ListContactsInput,
+  type Page,
+  type SearchInput,
+} from '@yanuka/core';
 import type {
   AuditLogEntry,
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContact,
   Note,
   Organization,
   Relationship,
@@ -79,6 +89,10 @@ export class TauriRepository implements ContactsRepository {
 
   favoriteContacts(limit = 12): Promise<ContactSummary[]> {
     return this.call('favorite_contacts', { limit });
+  }
+
+  deletedContacts(limit?: number): Promise<DeletedContact[]> {
+    return this.call('deleted_contacts', { limit });
   }
 
   createContact(input: ContactInput, id?: Ulid): Promise<ContactWithRelations> {
@@ -205,6 +219,7 @@ export const IPC_COMMANDS = [
   'get_contact',
   'recent_contacts',
   'favorite_contacts',
+  'deleted_contacts',
   'create_contact',
   'quick_add_contact',
   'update_contact',

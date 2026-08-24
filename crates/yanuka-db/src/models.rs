@@ -96,6 +96,19 @@ pub struct Organization {
     pub notes: Option<String>,
 }
 
+/// A soft-deleted contact, as the recycle bin lists it.
+///
+/// `deleted_at` travels separately from the summary rather than being read off
+/// `updated_at`. The two coincide today because a delete writes both, and a
+/// screen that quietly relies on that starts showing wrong dates the first
+/// time anything else touches a deleted row.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedContact {
+    pub contact: ContactSummary,
+    pub deleted_at: IsoDateTime,
+}
+
 /// The core record. Written to and read from `contacts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

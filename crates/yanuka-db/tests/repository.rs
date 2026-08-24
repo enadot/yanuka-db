@@ -186,6 +186,35 @@ fn links_a_contact_to_an_organization() {
 }
 
 #[test]
+fn the_recycle_bin_lists_deleted_contacts_until_they_are_restored() {
+    // A soft delete nothing can list is a hard delete with extra steps: the row
+    // survives on disk and the user can never reach it again.
+    let mut connection = db();
+    let created =
+        repository::create_contact(&mut connection, &contact("לסל המחזור"), None).unwrap();
+    let id = created.contact.id.clone();
+
+    assert!(repository::deleted_contacts(&connection, 100).unwrap().is_empty());
+
+    repository::delete_contact(&mut connection, &id).unwrap();
+    let binned = repository::deleted_contacts(&connection, 100).unwrap();
+    assert_eq!(binned.len(), 1);
+    assert_eq!(binned[0].contact.display_name, "לסל המחזור");
+    assert!(!binned[0].deleted_at.is_empty());
+
+    repository::restore_contact(&mut connection, &id).unwrap();
+    assert!(repository::deleted_contacts(&connection, 100).unwrap().is_empty());
+
+    // And searchable again, which is the point of restoring it.
+    let response = search::search(
+        &connection,
+        &SearchQuery { text: "לסל המחזור".into(), ..Default::default() },
+    )
+    .unwrap();
+    assert_eq!(response.total, 1);
+}
+
+#[test]
 fn soft_deletes_and_restores() {
     let mut connection = db();
     let created = repository::create_contact(&mut connection, &contact("למחיקה"), None).unwrap();

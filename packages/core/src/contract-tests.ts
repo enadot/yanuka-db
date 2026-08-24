@@ -123,6 +123,39 @@ export function runRepositoryContractTests(
       expect(restored.deletedAt).toBeNull();
     });
 
+    it('lists a deleted contact in the recycle bin until it is restored', async () => {
+      // A soft delete that nothing can list is a hard delete with extra steps:
+      // the row survives on disk but the user can never reach it again.
+      const repo = await makeRepository();
+      const created = await repo.createContact({ ...blankContact, displayName: 'לסל המחזור' });
+
+      expect((await repo.deletedContacts()).some((row) => row.contact.id === created.id)).toBe(
+        false,
+      );
+
+      await repo.deleteContact(created.id);
+      const binned = (await repo.deletedContacts()).find((row) => row.contact.id === created.id);
+      expect(binned).toBeDefined();
+      expect(binned!.deletedAt).toBeTruthy();
+      expect(binned!.contact.displayName).toBe('לסל המחזור');
+
+      await repo.restoreContact(created.id);
+      expect((await repo.deletedContacts()).some((row) => row.contact.id === created.id)).toBe(
+        false,
+      );
+
+      // And it is searchable again, which is the point of restoring it.
+      const results = await repo.search({
+        text: 'לסל המחזור',
+        sort: 'relevance',
+        limit: 50,
+        offset: 0,
+        favoritesOnly: false,
+        includeDeleted: false,
+      });
+      expect(results.results.some((result) => result.contact.id === created.id)).toBe(true);
+    });
+
     it('finds a contact by a word from its notes', async () => {
       const repo = await makeRepository();
       const created = await repo.createContact({

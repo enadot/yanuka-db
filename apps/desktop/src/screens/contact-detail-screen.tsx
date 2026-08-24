@@ -103,8 +103,9 @@ export function ContactDetailScreen() {
 
   const remove = async () => {
     await deleteContact.mutateAsync(contact.id);
-    // Soft delete, so offering to undo is honest — the row is still there.
-    toast.success('איש הקשר הועבר לסל המחזור', {
+    // Soft delete, so offering to undo is honest — the row is still there, and
+    // once this toast fades it is still reachable at הגדרות ← סל המחזור.
+    toast.success('איש הקשר הועבר לסל המחזור — ניתן לשחזר משם בכל עת', {
       action: {
         label: 'ביטול',
         onClick: () => {

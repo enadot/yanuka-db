@@ -368,3 +368,36 @@ were the two things they could not record.
 All of it goes through `ContactsRepository`, so the browser build behaves
 identically, the contract tests pin both implementations, and the e2e suite
 exercises the flows without a Tauri shell.
+
+## ADR-031 — The recycle bin, and why it has no "empty" button
+
+Deleting a contact has always been a soft delete: the row stays so the change
+can sync and be undone, and the confirmation dialog said as much — *"המידע נשמר
+וניתן לשחזר אותו"*. But every list and every search ends in `deleted_at IS
+NULL`, and `restoreContact` was reachable from exactly one place: the undo
+action on the toast shown immediately after deleting. Once that toast faded the
+record was unreachable. A soft delete nothing can list is a hard delete with
+extra steps, and the interface was promising otherwise.
+
+`deletedContacts()` is a separate read rather than an `includeDeleted` flag on
+`listContacts`. The flag exists in the query schema and was never implemented in
+SQLite, which is the tell: a parameter that switches off the one clause every
+other read depends on is one forgotten `false` away from putting deleted people
+back into the ordinary list. This method can only ever return records that are
+already gone.
+
+`DeletedContact` carries `deletedAt` beside the summary instead of letting the
+screen read `updatedAt`. The two coincide today only because a delete writes
+both, and that is the kind of coupling that starts printing wrong dates the
+first time anything else touches a deleted row.
+
+**There is no way to empty the bin, and that is the decision, not an omission.**
+A permanent delete is the only operation in this product that actually destroys
+something, it is irreversible by definition, and it would be reached at the
+exact moment a user is annoyed at a bad import and in a hurry — the same
+reasoning that refuses `down` migrations in ADR-023. The cost of not having it
+is a table of soft-deleted rows that no query reads; at one user and one
+lifetime of contacts that is nothing. The cost of having it is the one outcome
+priority 1 forbids. If a real need appears — a three-hundred-row import from the
+wrong file — the answer is a scoped "undo this import", which knows exactly what
+it is destroying, not a general delete-forever button.

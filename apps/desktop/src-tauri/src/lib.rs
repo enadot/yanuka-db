@@ -54,6 +54,7 @@ pub fn run() {
             commands::get_contact,
             commands::recent_contacts,
             commands::favorite_contacts,
+            commands::deleted_contacts,
             commands::create_contact,
             commands::quick_add_contact,
             commands::update_contact,

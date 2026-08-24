@@ -943,6 +943,34 @@ pub fn recent_contacts(connection: &Connection, limit: i64) -> Result<Vec<Contac
     contacts.into_iter().map(|c| summarize(connection, c)).collect()
 }
 
+/// The recycle bin: soft-deleted contacts, most recently deleted first.
+///
+/// Deliberately its own query rather than a flag on `list_contacts`. Every
+/// other read in this module ends in `deleted_at IS NULL`, and a parameter
+/// that can switch that off is one forgotten `false` away from putting deleted
+/// people back into the ordinary list; this one can only ever return records
+/// that are already gone.
+pub fn deleted_contacts(connection: &Connection, limit: i64) -> Result<Vec<DeletedContact>> {
+    let mut statement = connection.prepare(
+        "SELECT * FROM contacts WHERE deleted_at IS NOT NULL
+          ORDER BY deleted_at DESC, id DESC LIMIT ?1",
+    )?;
+    let contacts: Vec<Contact> = statement
+        .query_map(params![limit], contact_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    contacts
+        .into_iter()
+        .map(|contact| {
+            // The WHERE clause guarantees this, but an expect here would turn a
+            // future query change into a panic on the user's machine.
+            let deleted_at =
+                contact.deleted_at.clone().unwrap_or_else(|| contact.updated_at.clone());
+            Ok(DeletedContact { contact: summarize(connection, contact)?, deleted_at })
+        })
+        .collect()
+}
+
 pub fn favorite_contacts(connection: &Connection, limit: i64) -> Result<Vec<ContactSummary>> {
     let mut statement = connection.prepare(
         "SELECT * FROM contacts WHERE deleted_at IS NULL AND is_favorite = 1

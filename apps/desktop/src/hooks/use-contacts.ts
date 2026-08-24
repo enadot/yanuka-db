@@ -95,6 +95,23 @@ export function useOrganizations(query?: string) {
   });
 }
 
+export function useDeletedContacts() {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: ['contacts', 'deleted'],
+    queryFn: () => repository.deletedContacts(),
+  });
+}
+
+export function useRestoreContact() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.restoreContact(id),
+    onSuccess: invalidate,
+  });
+}
+
 export function useDatabaseStats() {
   const repository = useRepository();
   return useQuery({ queryKey: queryKeys.stats(), queryFn: () => repository.stats() });

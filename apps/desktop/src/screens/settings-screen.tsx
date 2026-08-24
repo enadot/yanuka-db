@@ -1,4 +1,4 @@
-import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags } from 'lucide-react';
+import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
@@ -110,7 +110,9 @@ export function SettingsScreen() {
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">סנכרון אחרון</span>
-            <span>{stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'טרם בוצע'}</span>
+            <span>
+              {stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'טרם בוצע'}
+            </span>
           </div>
           <Separator />
           <div className="flex justify-between">
@@ -153,6 +155,23 @@ export function SettingsScreen() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
+            <Trash2 className="size-4" aria-hidden />
+            סל המחזור
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            מחיקה כאן היא לעולם לא סופית. כל איש קשר שנמחק ממתין בסל וניתן לשחזור מלא.
+          </p>
+          <Button asChild variant="outline" className="shrink-0">
+            <Link to="/trash">פתיחת סל המחזור</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
             <DatabaseBackup className="size-4" aria-hidden />
             גיבוי וייצוא
           </CardTitle>
@@ -160,17 +179,15 @@ export function SettingsScreen() {
         <CardContent className="space-y-3">
           {isLocal ? (
             <p className="text-sm text-muted-foreground">
-              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים.
-              {' '}
-              גיבוי אחרון:{' '}
+              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים. גיבוי אחרון:{' '}
               <span data-testid="last-backup">
                 {backup?.lastBackupAt ? formatDateTime(backup.lastBackupAt) : 'טרם נלקח'}
               </span>
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני.
-              ייצוא ה־CSV פועל גם כאן.
+              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני. ייצוא
+              ה־CSV פועל גם כאן.
             </p>
           )}
           <div className="flex flex-wrap gap-2">

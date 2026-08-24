@@ -4,6 +4,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContact,
   Note,
   Organization,
   Relationship,
@@ -99,6 +100,16 @@ export interface ContactsRepository {
   recentContacts(limit?: number): Promise<ContactSummary[]>;
 
   favoriteContacts(limit?: number): Promise<ContactSummary[]>;
+
+  /**
+   * Soft-deleted contacts, most recently deleted first — the recycle bin.
+   *
+   * A separate read rather than an `includeDeleted` flag on `listContacts`:
+   * a flag is one forgotten `false` away from showing deleted people in the
+   * ordinary list, and this method can only ever return records that are
+   * already gone.
+   */
+  deletedContacts(limit?: number): Promise<DeletedContact[]>;
 
   // -- contact writes ------------------------------------------------------
 

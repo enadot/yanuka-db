@@ -7,6 +7,7 @@ import { ContactEditScreen } from './screens/contact-edit-screen';
 import { SettingsScreen } from './screens/settings-screen';
 import { ImportScreen } from './screens/import-screen';
 import { DuplicatesScreen } from './screens/duplicates-screen';
+import { TrashScreen } from './screens/trash-screen';
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="import" element={<ImportScreen />} />
         <Route path="duplicates" element={<DuplicatesScreen />} />
+        <Route path="trash" element={<TrashScreen />} />
       </Route>
     </Routes>
   );

@@ -12,6 +12,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContact,
   FacetField,
   Note,
   Organization,
@@ -244,6 +245,15 @@ export class MockRepository implements ContactsRepository {
       .filter((contact) => contact.isFavorite)
       .slice(0, limit)
       .map(toSummary);
+  }
+
+  async deletedContacts(limit = 100): Promise<DeletedContact[]> {
+    await this.tick();
+    return this.contacts
+      .filter((contact) => contact.deletedAt != null)
+      .sort((a, b) => (a.deletedAt! < b.deletedAt! ? 1 : -1))
+      .slice(0, limit)
+      .map((contact) => ({ contact: toSummary(contact), deletedAt: contact.deletedAt! }));
   }
 
   // -- writes --------------------------------------------------------------

@@ -64,12 +64,16 @@ docs/               architecture, database, search, sync, security, decisions
 עריכה לעולם אינה מוחקת מה שהטופס לא הציג: patch מבחין בין שדה שלא נגעו בו,
 שדה שרוקנו במכוון, ואוסף שנמחק כולו. ADR-029.
 
+מחיקה היא לעולם לא סופית: הגדרות ← סל המחזור מציג כל איש קשר שנמחק, עם תאריך
+המחיקה, ומשחזר אותו על כל הטלפונים, ההערות והקשרים. אין "רוקן את הסל" — ADR-031
+מסביר למה.
+
 ## Verification
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test   # 171 TypeScript tests
-cargo test -p yanuka-db -p yanuka-search   # 41 Rust tests
-pnpm --filter @yanuka/desktop test:e2e     # 19 Playwright tests in Chromium
+pnpm lint && pnpm typecheck && pnpm test   # 172 TypeScript tests
+cargo test -p yanuka-db -p yanuka-search   # 42 Rust tests
+pnpm --filter @yanuka/desktop test:e2e     # 20 Playwright tests in Chromium
 ```
 
 The migration tests run the **real** production `.sql` against real SQLite via
