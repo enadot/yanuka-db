@@ -7,7 +7,10 @@ genuine collisions (ADR-034). `crates/yanuka-db/tests/sync.rs` runs two real
 databases and moves mutations between them by hand, which is what a sync engine
 will do once there is one.
 
-There is no network code. What remains is a courier. See ADR-019.
+The courier now exists too: `crates/yanuka-sync-server` stores an ordered log of
+sealed envelopes and hands them back by cursor, tested against a real
+PostgreSQL (ADR-035, docs/DEPLOY.md). What remains is the loop on the device
+that drives push and pull, and a screen for resolving conflicts. See ADR-019.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -21,9 +24,14 @@ that happens to be always on.
 
 ```
 Desktop SQLite ──→ mutation log ──→ sync engine ──→ API ──→ PostgreSQL
-      ▲                                                        │
+      ▲                                  (seals)              (blobs)
       └────────────────── incremental pull ────────────────────┘
 ```
+
+The server stores `(seq, id, device_id, created_at, nonce, ciphertext)` and
+nothing else. It has no schema mirroring this one, applies nothing, and cannot
+read a payload — the sealing happens on the device under a key the server never
+receives. See ADR-035.
 
 Every device can create data offline. No device is authoritative. The server
 does not win by virtue of being the server — it holds whatever it was last told,

@@ -40,8 +40,26 @@ jobs:
   # The storage and search crates carry no Tauri dependency, which is the whole
   # reason they can run here without apt-installing a webview.
   rust:
-    name: rust · storage and search
+    name: rust · storage, search and sync
     runs-on: ubuntu-latest
+
+    # The sync server's tests run against a real PostgreSQL rather than a mock.
+    # What is most likely to be wrong in a log server — sequence assignment
+    # under concurrent writers, uniqueness on retry, paging boundaries — is
+    # precisely what a mock cannot have.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: yanuka_sync_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -51,8 +69,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -p yanuka-db -p yanuka-search --all-targets -- -D warnings
-      - run: cargo test -p yanuka-db -p yanuka-search
+      - run: >-
+          cargo clippy -p yanuka-db -p yanuka-search
+          -p yanuka-sync-proto -p yanuka-sync-server
+          --all-targets -- -D warnings
+      - run: cargo test -p yanuka-db -p yanuka-search -p yanuka-sync-proto
+      - run: cargo test -p yanuka-sync-server
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/yanuka_sync_test
 
   # The one thing the development container cannot do: prove the Tauri shell
   # still compiles. Catches a broken command signature before the slow Windows

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/yanuka-db", "crates/yanuka-search", "apps/desktop/src-tauri"]
+members = [
+  "crates/yanuka-db",
+  "crates/yanuka-search",
+  "crates/yanuka-sync-proto",
+  "crates/yanuka-sync-server",
+  "apps/desktop/src-tauri",
+]
 
 # The Tauri shell links against the system webview, which is not present on
 # every development machine (and notably not on the Linux CI runner used for

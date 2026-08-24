@@ -604,3 +604,66 @@ exchanged both describe the same archive.
 Still absent, by design: the transport (ADR-019), a UI for resolving conflicts,
 and any parity in `MockRepository`, which keeps a counter rather than a log
 because the browser build has nothing to sync with.
+
+## ADR-035 — The server relays a sealed log; it does not hold a replica
+
+Multiple computers and an Android phone need the same archive, and the main
+machine is frequently offline. That settles the shape of every device — a full
+local replica — and leaves one question: what is on the server.
+
+The conventional answer is a mirror. The server holds the same schema in
+PostgreSQL, applies incoming changes, resolves conflicts, and can answer
+queries. Rejected, for three reasons:
+
+**A second schema is a second implementation of every rule about this data**,
+in a different language against a different database. They drift. The symptom
+of drift is a contact that reads differently depending on which device you ask,
+with no authority to consult about which is right — on a product whose first
+promise is that information does not get lost.
+
+**A server that merges is a server that reads.** Sealing the payloads is what
+makes it defensible to keep a private contact archive on rented infrastructure
+while ADR-018 leaves the desktop database unencrypted. A server with opinions
+about the contents cannot also be blind to them.
+
+**The hard part is already written.** Three-way merge, conflict detection,
+tombstones and deferral live in `apply.rs` and are tested against two real
+databases (ADR-034). Rewriting them server-side would double the surface
+without adding a capability.
+
+So the server stores `(seq, id, device_id, created_at, nonce, ciphertext)` and
+hands back everything after a cursor. It is small enough to read in one sitting,
+which is the property that matters for the component nobody looks at again until
+it misbehaves.
+
+**Two secrets, deliberately.** The enrolment secret lives on the server and
+proves a device may join; the data passphrase never leaves the devices and seals
+the payloads. Conflating them would be easier to explain to one non-technical
+user and would hand the server the ability to read everything. A `ConnectionCode`
+bundles both into one string to paste, and only the enrolment half is ever sent.
+
+**Pushes are serialised with a Postgres advisory lock.** Without it two pushes
+can take sequence numbers 10 and 11 and commit in the opposite order; a device
+pulling in between records 11 as its cursor and never asks for 10 again. Nothing
+errors, and one change simply never arrives on one device. The test for this
+holds the lock and asserts a push blocks — the property is invisible in the
+finished rows, so a test that inspects them afterwards cannot prove it. Removing
+the lock makes that test fail, which was checked.
+
+**A pull is not filtered by device.** Returning a device its own history costs a
+little bandwidth and buys the ability to rebuild a machine that lost its
+database: it re-enrols and replays everything. The device already recognises a
+change it has applied. This makes the sealed log an off-site backup as well as a
+courier, which serves the first priority directly.
+
+Costs, stated rather than discovered later:
+
+- No server-side search, and therefore no thin web client. Every device is a
+  full replica or it is nothing.
+- The provider sees how much changes and when, though not what.
+- A lost data passphrase is unrecoverable. It costs syncing, not the archive —
+  the local database is unencrypted and the daily backups still work — but that
+  distinction has to reach the user before they choose a passphrase.
+
+Deployment is Fly.io with managed Postgres, per the hosting decision; nothing
+but `fly.toml` is specific to it. See docs/DEPLOY.md.

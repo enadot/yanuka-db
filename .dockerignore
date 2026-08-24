@@ -1,0 +1,16 @@
+# The server image needs the Rust workspace and nothing else. Excluding the
+# frontend keeps the build context from carrying node_modules and the compiled
+# desktop artefacts, which together dwarf the source.
+node_modules
+**/node_modules
+target
+**/target
+dist
+**/dist
+.git
+apps/desktop/src
+apps/desktop/e2e
+apps/desktop/public
+packages
+docs
+*.md
