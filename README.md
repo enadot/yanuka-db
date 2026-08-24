@@ -115,6 +115,7 @@ CI covers the shell on both `ubuntu-latest` (with the apt packages) and
 | [Rust](https://rustup.rs) (stable, MSVC toolchain) | rustup's default on Windows |
 | [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) | tick **Desktop development with C++** |
 | WebView2 | already present on Windows 10 1803+ and Windows 11 |
+| Several GB of free disk | `target\debug` for the Tauri tree is large, and Windows adds `.pdb` files on top |
 
 ### Run it
 
@@ -139,7 +140,26 @@ cargo clean                                    # the failed build leaves corrupt
 $env:CARGO_BUILD_JOBS=2 ; pnpm --filter @yanuka/desktop tauri dev
 ```
 
-If it still fails, raise the paging file: **System Properties → Advanced →
+**If it dies with `os error 112` — "there is not enough space on the disk"** — that
+is real disk, not the paging file. **Do not run `cargo clean`**: the failure
+usually lands on one of the last crates, everything before it is already cached,
+and freeing space and re-running resumes in a minute. `cargo clean` throws that
+away and walks into the same wall twenty minutes later. To see what the build is
+holding:
+
+```powershell
+Get-PSDrive C | Select-Object Used,Free
+"{0:N1} GB" -f ((Get-ChildItem target -Recurse -File | Measure-Object Length -Sum).Sum / 1GB)
+```
+
+On a machine where C: is permanently tight, move the build output to another
+drive once and stop thinking about it:
+
+```powershell
+$env:CARGO_TARGET_DIR="D:\rust-target"
+```
+
+If the paging-file error persists instead, raise the paging file: **System Properties → Advanced →
 Performance Settings → Advanced → Virtual memory → Change**, uncheck *Automatically
 manage*, choose **System managed size** (or a custom size of 16 GB or more), and
 reboot. Building the `windows` and `tauri` crates is genuinely memory-hungry.
