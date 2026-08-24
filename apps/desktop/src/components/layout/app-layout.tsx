@@ -32,12 +32,18 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full min-h-0">
-      <nav className="flex w-52 shrink-0 flex-col gap-1 border-e bg-sidebar p-3">
-        <Link to="/" className="mb-4 flex items-center gap-2 px-2 py-1">
-          <Database className="size-5 text-muted-foreground" aria-hidden />
-          <span className="font-semibold">מאגר הקשרים</span>
+      <nav className="flex w-60 shrink-0 flex-col gap-1.5 border-e bg-sidebar p-4">
+        <Link to="/" className="mb-4 flex items-center gap-2.5 px-2 py-1">
+          <Database className="size-6 text-muted-foreground" aria-hidden />
+          <span className="text-lg font-bold">מאגר הקשרים</span>
         </Link>
 
+        {/*
+          The active item is marked three ways at once — background, weight and
+          a bar on the start edge — rather than by a slightly darker grey. On a
+          screen someone returns to after being interrupted, "where am I" should
+          not require comparing two shades.
+        */}
         {NAV_ITEMS.map((item) => (
           <NavLink
             key={item.to}
@@ -45,22 +51,29 @@ export function AppLayout() {
             end={item.end}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors',
+                'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-base transition-colors',
                 isActive
-                  ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                  : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+                  ? 'bg-sidebar-accent font-bold text-sidebar-accent-foreground before:absolute before:inset-y-1.5 before:start-0 before:w-1 before:rounded-full before:bg-primary'
+                  : 'font-medium text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
               )
             }
           >
-            <item.icon className="size-4" aria-hidden />
+            <item.icon className="size-5" aria-hidden />
             {item.label}
           </NavLink>
         ))}
 
         <Separator className="my-3" />
 
-        <Button size="sm" className="justify-start gap-2" onClick={() => navigate('/contacts/new')}>
-          <Plus className="size-4" aria-hidden />
+        {/*
+          The one creative action in the application, so it is the one filled
+          button in the chrome and it says what it makes.
+        */}
+        <Button
+          className="h-12 justify-start gap-2 text-base font-bold"
+          onClick={() => navigate('/contacts/new')}
+        >
+          <Plus className="size-5" aria-hidden />
           איש קשר חדש
         </Button>
 
@@ -70,14 +83,13 @@ export function AppLayout() {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b px-4">
           <Button
             variant="outline"
-            size="sm"
-            className="w-full max-w-md justify-start gap-2 text-muted-foreground"
+            className="w-full max-w-md justify-start gap-2 text-base font-medium text-muted-foreground"
             onClick={openCommand}
           >
-            <Search className="size-4" aria-hidden />
+            <Search className="size-5" aria-hidden />
             <span className="flex-1 text-start">חיפוש מהיר…</span>
             {/* The shortcut is written LTR because it names physical keys. */}
             <kbd className="ltr-inline rounded border bg-muted px-1.5 py-0.5 text-[0.7rem] font-medium">

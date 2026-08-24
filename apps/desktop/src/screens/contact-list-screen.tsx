@@ -29,13 +29,7 @@ import {
 import { useContactList } from '../hooks/use-contacts';
 
 /** Hebrew alphabet, plus Latin and a bucket for everything else. */
-const ALPHABET = [
-  ...'אבגדהוזחטיכלמנסעפצקרשת'.split(''),
-  'A',
-  'M',
-  'S',
-  '#',
-];
+const ALPHABET = [...'אבגדהוזחטיכלמנסעפצקרשת'.split(''), 'A', 'M', 'S', '#'];
 
 /**
  * Browse the whole database.
@@ -113,8 +107,14 @@ export function ContactListScreen() {
         className="flex-wrap justify-start"
         aria-label="דילוג לאות"
       >
+        {/* 44px targets: this is a row of 30 adjacent buttons, and at the old
+            size hitting ג instead of ב was a coin toss. */}
         {ALPHABET.map((char) => (
-          <ToggleGroupItem key={char} value={char} className="size-8 p-0 text-sm">
+          <ToggleGroupItem
+            key={char}
+            value={char}
+            className="size-11 p-0 text-base font-semibold data-[state=on]:font-bold"
+          >
             {char}
           </ToggleGroupItem>
         ))}
@@ -200,7 +200,10 @@ export function ContactListScreen() {
       )}
 
       <div className="flex items-center justify-between">
-        <Select value={String(limit)} onValueChange={(value) => reset(() => setLimit(Number(value)))}>
+        <Select
+          value={String(limit)}
+          onValueChange={(value) => reset(() => setLimit(Number(value)))}
+        >
           <SelectTrigger className="w-32" aria-label="שורות בעמוד">
             <SelectValue />
           </SelectTrigger>

@@ -68,12 +68,22 @@ docs/               architecture, database, search, sync, security, decisions
 המחיקה, ומשחזר אותו על כל הטלפונים, ההערות והקשרים. אין "רוקן את הסל" — ADR-031
 מסביר למה.
 
+## The interface
+
+מסך הבית מציג **מה אפשר לחפש**, כשבבים לחיצים — מקצוע, עיר, שגיאת כתיב, סוף
+מספר טלפון, מילה מתוך הערה. תיבת חיפוש ברורה רק למי שכבר יודע מה המנוע מקבל;
+מי שלא, מבין ריבוע ריק כ"אני חייב לזכור את השם" — בדיוק המקרה שהמוצר קיים בשבילו.
+
+הטיפוגרפיה היא Google Sans, ארוזה מקומית ב־WOFF2 בארבעה משקלים (ADR-032). בכל
+שורה יש דבר כבד אחד בלבד — השם — וכל השאר שקט; פריט פעיל בניווט מסומן בשלוש
+דרכים; טבעת פוקוס של 3px; וכל אלמנט לחיץ הוא לפחות 44 פיקסלים.
+
 ## Verification
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test   # 172 TypeScript tests
 cargo test -p yanuka-db -p yanuka-search   # 42 Rust tests
-pnpm --filter @yanuka/desktop test:e2e     # 20 Playwright tests in Chromium
+pnpm --filter @yanuka/desktop test:e2e     # 23 Playwright tests in Chromium
 ```
 
 The migration tests run the **real** production `.sql` against real SQLite via

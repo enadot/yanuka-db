@@ -142,6 +142,6 @@ shape is documented here instead; ADR-017.
 | storage + search (Rust) | `cargo test -p yanuka-db -p yanuka-search` — 42 tests | anywhere |
 | normalizer conformance | shared JSON fixture, both languages | anywhere |
 | IPC name parity | regex over `commands.rs` vs `IPC_COMMANDS` | anywhere |
-| the real UI | Playwright + Chromium — 20 tests | anywhere |
+| the real UI | Playwright + Chromium — 23 tests | anywhere |
 | the Tauri shell compiles | `cargo check -p yanuka-desktop` | CI (ubuntu + apt deps) |
 | the installer builds | `tauri build` | CI (windows-latest) |

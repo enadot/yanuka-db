@@ -131,13 +131,19 @@ web client inherits them without a second copy. Source-only, no build step.
 physical K key reports `'ל'`, so a `key`-based binding fails for exactly the
 users it was built for.
 
-## ADR-014 — System fonts, no web fonts
+## ADR-014 — No *fetched* fonts (superseded in part by ADR-032)
 
-Segoe UI / Noto Sans Hebrew / Arial Hebrew. The application must start and
-render correctly on a machine that has never been online, and a font request
-also leaks that it is running. Hebrew gets `line-height: 1.7` and zero letter
-spacing — it has no ascenders and descenders to separate lines visually, and it
-degrades badly with tracking.
+Originally: Segoe UI / Noto Sans Hebrew / Arial Hebrew, on the grounds that the
+application must start and render correctly on a machine that has never been
+online, and that a font request also leaks that it is running.
+
+Both reasons survive and still bind. What they actually forbid is a *request*,
+not a typeface — ADR-032 bundles one locally and neither reason applies to it.
+The system stack stays behind it as a fallback that has to keep working.
+
+Hebrew keeps `line-height: 1.7` and zero letter spacing regardless of the face:
+it has no ascenders and descenders to separate lines visually, and it degrades
+badly with tracking.
 
 ## ADR-015 — "Only shadcn/ui" means no competing component library
 
@@ -401,3 +407,62 @@ lifetime of contacts that is nothing. The cost of having it is the one outcome
 priority 1 forbids. If a real need appears — a three-hundred-row import from the
 wrong file — the answer is a scoped "undo this import", which knows exactly what
 it is destroying, not a general delete-forever button.
+
+## ADR-032 — A bundled typeface, and a scale built for one glance
+
+The user is one person, frequently offline, not technical, and reads this
+screen while doing something else. The interface was competent and quiet: 14px
+body text, one weight step between a heading and a paragraph, a one-pixel focus
+ring, and a search box whose entire capability was described in a placeholder.
+Everything was findable if you already knew where to look.
+
+Google Sans ships as local WOFF2 at four weights (400/500/600/700), full
+character set, no subsetting — this is an archive of contacts from all over the
+world, and dropping the glyphs for a name in Yiddish or Russian is exactly the
+silent loss priority 1 forbids. It is 2.0 MB in the bundle, down from 7.7 MB as
+TTF. `font-display: block` because there is no network round-trip to wait out:
+nothing is gained by a swap period and a flash of fallback is lost.
+
+The point of four real weights is that a glance resolves the page without
+reading it. Applied consistently:
+
+- **Body 17px, headings 30/20/18 bold** — set once in the base layer instead of
+  being re-decided per screen, so hierarchy cannot drift.
+- **One heavy thing per row.** In a search result only the name is large and
+  bold; profession, city and phone are deliberately quieter. A row where four
+  things compete has to be read rather than scanned.
+- **The active nav item is marked three ways** — background, weight, and a bar
+  on the start edge. "Where am I" after an interruption should not require
+  comparing two shades of grey.
+- **A 3px focus ring, and a 44px floor on anything clickable.** The floor is
+  the accessibility minimum for a pointer target and doubles as an
+  anti-misclick rule; the alphabet index in particular was 30 adjacent 32px
+  buttons, where hitting ג instead of ב was a coin toss.
+- **`prefers-reduced-motion` is honoured.** Movement is a distraction cost for
+  this audience and the operating system already knows the answer.
+
+The largest change is not typographic. **The home screen now shows what you can
+type, as chips you can press** — a profession, a city, a misspelling, half a
+phone number, a word from a note. A search box is only self-explanatory to
+someone who already knows what the engine accepts; someone who does not reads a
+blank box as "I must know the name", which is precisely the case this product
+exists to handle and the one where it looks broken. The chips are real queries
+against the real data, drawn from the user-story table in PRODUCT.md, so each
+one works and each one teaches the shape of the next query the user types
+themselves. They disappear once there is a query — a starting point, not
+permanent furniture.
+
+Two fixes fell out of doing this. `.numeric` set `direction: ltr` on block
+elements, which also flips what `text-align: start` resolves to, so every phone
+number was thrown to the far left of the window, visually orphaned from its
+row; the digits still read LTR, the block now stays put. And the bundled font
+is asserted in the e2e suite rather than assumed: a font that fails to load
+does not throw and does not look broken, it looks like a slightly different
+application — the kind of regression a bundler upgrade introduces silently.
+
+Note on licensing: Google Sans is Google's proprietary brand typeface and is
+not licensed for third-party redistribution. It was supplied deliberately for
+this single-user, internally-distributed build. If this application is ever
+distributed more widely, the face has to be replaced — the stack is ordered so
+that swapping the `@font-face` block and the first entry in `--font-sans` is
+the whole change.

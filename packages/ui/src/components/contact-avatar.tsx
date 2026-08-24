@@ -34,15 +34,17 @@ export interface ContactAvatarProps {
 }
 
 const SIZES = {
-  sm: 'size-8 text-xs',
-  md: 'size-10 text-sm',
-  lg: 'size-16 text-xl',
+  sm: 'size-10 text-sm',
+  md: 'size-12 text-base',
+  lg: 'size-16 text-2xl',
 } as const;
 
 export function ContactAvatar({ name, initials, className, size = 'md' }: ContactAvatarProps) {
   return (
     <Avatar className={cn(SIZES[size], className)}>
-      <AvatarFallback className={cn('font-medium', tintFor(name))} aria-label={name}>
+      {/* Bold, because the initials are a recognition cue rather than text to
+          read — they have to register at a glance, next to a bold name. */}
+      <AvatarFallback className={cn('font-bold', tintFor(name))} aria-label={name}>
         {initials}
       </AvatarFallback>
     </Avatar>
