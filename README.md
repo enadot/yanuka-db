@@ -129,6 +129,21 @@ pnpm --filter @yanuka/desktop tauri dev     # the real desktop app, live SQLite
 The first `tauri dev` compiles SQLite and the Rust dependencies and takes
 several minutes; afterwards it is incremental.
 
+**If it dies with `os error 1455` — "the paging file is too small"** — rustc ran
+out of virtual memory, not disk. The workspace already strips debug information
+from dependencies to keep the build within reach (`[profile.dev]` in
+`Cargo.toml`), but a small paging file can still lose. In order:
+
+```powershell
+cargo clean                                    # the failed build leaves corrupt .rlib metadata
+$env:CARGO_BUILD_JOBS=2 ; pnpm --filter @yanuka/desktop tauri dev
+```
+
+If it still fails, raise the paging file: **System Properties → Advanced →
+Performance Settings → Advanced → Virtual memory → Change**, uncheck *Automatically
+manage*, choose **System managed size** (or a custom size of 16 GB or more), and
+reboot. Building the `windows` and `tauri` crates is genuinely memory-hungry.
+
 ### Build the installer
 
 ```powershell
