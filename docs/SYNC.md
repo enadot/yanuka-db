@@ -1,8 +1,11 @@
 # SYNC
 
-**Status: designed and prepared, not implemented.** The mutation log, device
-registry, cursors and conflict tables ship and are written to on every local
-change. There is no network code. See ADR-019.
+**Status: local recording implemented, transport not.** The mutation log,
+device registry, cursors and conflict tables ship, and every local change now
+appends a mutation carrying the change itself (ADR-033 — for a long time it
+carried only a display name, which would have made sync appear to work while
+delivering nothing). There is no network code, and no apply path yet. See
+ADR-019.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -40,9 +43,36 @@ payload · previous · base_version · created_at · device_id · user_id
 status(pending|syncing|synced|failed|conflict) · attempts · last_error
 ```
 
+What each operation carries:
+
+- **create** — the whole record, including its child collections. Nothing else
+  exists for a replaying device to build the contact from.
+- **update** — the changed fields only, compared against the *stored* record
+  rather than against the patch. A patch that re-sends an unchanged field is not
+  an edit; logging it as one manufactures conflicts on other devices.
+- **merge** — a field-level diff of what moved onto the surviving contact, plus
+  `mergedFrom`. Not just the operation name: re-deriving the merge remotely only
+  agrees if that device holds byte-identical copies of both originals.
+- **delete** — no payload. The tombstone is the `deleted_at` update.
+
+A **child collection counts as one field**. If any phone changes, the whole
+phone list is in the payload, because `write_children` replaces each collection
+wholesale — the list genuinely is the unit that changed. The cost: two devices
+editing different phone numbers of one contact collide, where two devices
+editing the city and the profession merge cleanly.
+
+Snapshots are **read back from the database**, not serialised from the input
+struct. Child ids are minted during the write, and a payload carrying
+`"id": null` would have each device inventing its own id for the same phone
+number — duplicates that no merge can reconcile, because nothing links the rows.
+
 `crates/yanuka-db/tests/repository.rs` asserts that create, update and delete
-each append a row. Nothing may change on disk without one, or an edit made
-offline would silently never reach another device.
+each append a row, *and* that the rows contain the data: what the user typed
+reaches the log, an edit logs the field that moved and not the ones that did
+not, every entity kind is logged, and a merge carries the details it moved.
+Nothing may change on disk without a mutation, or an edit made offline would
+silently never reach another device — and a mutation that names the change
+without recording it is the same failure with a passing test. See ADR-033.
 
 ## Push
 
@@ -107,6 +137,13 @@ way to distinguish "deleted" from "not yet received".
 A tombstone is a normal update carrying `deleted_at`, and it merges like any
 other field. Restoring is setting it back to null, which is why undo is honest:
 the row never left.
+
+**Cascades are not logged.** Deleting a tag or an organization also soft-deletes
+the join rows pointing at it, and those rows get no mutations of their own: they
+follow deterministically from the parent id. The apply side must therefore
+perform the cascade itself when it receives a `tag` or `organization` delete.
+This keeps the log proportional to what the user did rather than to how many
+contacts happened to carry the tag.
 
 ## Devices
 

@@ -19,7 +19,7 @@ use crate::index::reindex_contact;
 use crate::models::*;
 use crate::mutation::{self, Operation};
 use crate::now_iso;
-use crate::repository::{device_id, get_contact, summarize};
+use crate::repository::{as_input, device_id, get_contact, summarize};
 
 /// Two contacts that are likely the same person.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -341,14 +341,33 @@ pub fn merge_contacts(
           WHERE id = ?1",
         params![keep_id, now, device],
     )?;
+    // Everything the merge moved onto the surviving contact, as a field-level
+    // diff against its pre-merge state.
+    //
+    // `{"mergedFrom": …}` alone used to be the whole payload, which named the
+    // operation without recording its effect: another device replaying the log
+    // would learn that a merge happened and receive none of the phone numbers,
+    // addresses or notes it pulled across. Re-deriving the result from the two
+    // originals is not a substitute either — it only agrees if that device
+    // holds byte-identical copies of both, which is exactly what cannot be
+    // assumed. `mergedFrom` is kept alongside so the history stays readable.
+    let after =
+        get_contact(&tx, keep_id)?.ok_or_else(|| DbError::NotFound("איש הקשר שנשמר".into()))?;
+    let (mut changed, replaced) = mutation::changes(
+        &serde_json::to_value(as_input(&keep))?,
+        &serde_json::to_value(as_input(&after))?,
+    );
+    if let Some(fields) = changed.as_object_mut() {
+        fields.insert("mergedFrom".into(), json!(merge_id));
+    }
     mutation::record(
         &tx,
         mutation::NewMutation {
             entity_type: "contact",
             entity_id: keep_id,
             operation: Operation::Update,
-            payload: Some(&json!({ "mergedFrom": merge_id })),
-            previous: None,
+            payload: Some(&changed),
+            previous: Some(&replaced),
             base_version: keep.contact.version,
             device_id: &device,
         },

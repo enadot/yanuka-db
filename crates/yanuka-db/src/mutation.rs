@@ -86,11 +86,38 @@ pub fn pending_count(connection: &rusqlite::Connection) -> Result<i64> {
     )?)
 }
 
+/// The changed fields, paired with the values they replaced.
+///
+/// A mutation needs both halves. `payload` is what the other device must apply;
+/// `previous` is what makes a rejected push explainable ("this was 052-…, the
+/// server holds 054-…") and gives an undo something to restore. Deriving them
+/// from one comparison is what stops them describing different edits.
+pub fn changes(previous: &Value, next: &Value) -> (Value, Value) {
+    let payload = diff(previous, next);
+    let before = match (previous.as_object(), payload.as_object()) {
+        (Some(before), Some(changed)) => Value::Object(
+            changed
+                .keys()
+                .map(|key| (key.clone(), before.get(key).cloned().unwrap_or(Value::Null)))
+                .collect(),
+        ),
+        // `diff` fell back to the whole value, so there is no field list to
+        // mirror and the honest answer about the prior state is all of it.
+        _ => previous.clone(),
+    };
+    (payload, before)
+}
+
 /// Compute the changed subset of a contact update.
 ///
 /// Sending the whole record would make every edit collide with every other
 /// edit; sending only what moved is what lets two devices touch one contact
 /// without a conflict.
+///
+/// A child collection — the phone list, the e-mail list — counts as one field.
+/// That is not a shortcut: `write_children` replaces each collection wholesale,
+/// so the list genuinely is the unit that changed, and pretending otherwise
+/// would produce a log that does not describe what the database did.
 pub fn diff(previous: &Value, next: &Value) -> Value {
     let (Some(before), Some(after)) = (previous.as_object(), next.as_object()) else {
         return next.clone();

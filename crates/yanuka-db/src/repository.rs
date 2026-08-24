@@ -145,13 +145,24 @@ pub fn create_contact(
 
     write_children(&tx, &contact_id, input, &now, &device)?;
 
+    // The whole record, because a create has no prior state to diff against and
+    // a device replaying this log has nothing else to build the contact from.
+    //
+    // Read back rather than re-serialising `input`: the ids of the phones and
+    // e-mail addresses are minted during the write, and a payload that carries
+    // `"id": null` would have every device inventing its own id for the same
+    // phone number — which surfaces later as duplicates that no merge can
+    // reconcile, because nothing links the two rows.
+    let snapshot = serde_json::to_value(as_input(
+        &get_contact(&tx, &contact_id)?.ok_or_else(|| DbError::NotFound("איש הקשר".into()))?,
+    ))?;
     mutation::record(
         &tx,
         mutation::NewMutation {
             entity_type: "contact",
             entity_id: &contact_id,
             operation: Operation::Create,
-            payload: Some(&json!({ "displayName": input.display_name })),
+            payload: Some(&snapshot),
             previous: None,
             base_version: 0,
             device_id: &device,
@@ -326,7 +337,7 @@ fn write_children(
 /// The round-trip that makes a patch merge safe: a field the caller left out
 /// is refilled from here, so it is written back exactly as it was rather than
 /// being dropped by the child-collection replace.
-fn as_input(stored: &ContactWithRelations) -> ContactInput {
+pub(crate) fn as_input(stored: &ContactWithRelations) -> ContactInput {
     ContactInput {
         first_name: stored.contact.first_name.clone(),
         last_name: stored.contact.last_name.clone(),
@@ -467,7 +478,8 @@ pub fn update_contact(
         }
     }
 
-    let merged = apply_patch(as_input(&stored), patch);
+    let before = as_input(&stored);
+    let merged = apply_patch(before.clone(), patch);
     let input = &merged;
     validate(input)?;
 
@@ -516,14 +528,25 @@ pub fn update_contact(
 
     write_children(&tx, id, input, &now, &device)?;
 
+    // What actually moved, compared against the stored record rather than
+    // against the patch: a patch that re-sends an unchanged field is not an
+    // edit, and logging it as one would manufacture conflicts on other devices.
+    // Both sides are read back from the database so the ids inside the child
+    // collections line up and an unchanged phone list compares equal.
+    let (changed, replaced) = mutation::changes(
+        &serde_json::to_value(&before)?,
+        &serde_json::to_value(as_input(
+            &get_contact(&tx, id)?.ok_or_else(|| DbError::NotFound("איש הקשר".into()))?,
+        ))?,
+    );
     mutation::record(
         &tx,
         mutation::NewMutation {
             entity_type: "contact",
             entity_id: id,
             operation: Operation::Update,
-            payload: Some(&json!({ "displayName": input.display_name })),
-            previous: Some(&json!({ "displayName": current.1 })),
+            payload: Some(&changed),
+            previous: Some(&replaced),
             base_version: current.0,
             device_id: &device,
         },

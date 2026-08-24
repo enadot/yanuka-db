@@ -466,3 +466,74 @@ this single-user, internally-distributed build. If this application is ever
 distributed more widely, the face has to be replaced — the stack is ordered so
 that swapping the `@font-face` block and the first entry in `--font-sans` is
 the whole change.
+
+## ADR-033 — The mutation log records the change, not a receipt for it
+
+ADR-019 defers the sync transport but claims the local record is ready: "every
+write appends a mutation row, so nothing done offline is lost". SYNC.md is more
+specific still — "`payload` holds only the fields that changed" — and names
+that as the property field-level merging depends on.
+
+The rows were being appended. Their contents were a placeholder. A contact
+created with a city, a phone number, an e-mail address and a note produced
+exactly one mutation:
+
+```
+contact  create  {"displayName":"שרה כהן"}
+```
+
+`mutation::diff`, the function written to compute the changed subset, existed
+and was never called from anywhere — dead code since it was introduced. Both
+contact write sites passed a hardcoded `json!({ "displayName": … })`. Child
+collections were not logged at all, because `write_children` never touched the
+log. Neither were tags, categories, organizations, relationships or notes,
+because `taxonomy.rs` never imported the module. A merge logged
+`{"mergedFrom": …}` — the name of the operation with none of its effect.
+
+The test that was supposed to catch this asserted a *count*: three writes, three
+rows. It passed throughout.
+
+None of this was visible in the running application, and it would not have
+become visible when a server was added either. Sync would have appeared to work
+— devices exchanging rows, counters draining — while delivering bare display
+names. The failure mode is the one the product exists to prevent, arriving
+through the mechanism built to prevent it.
+
+What the log now carries:
+
+- **create** — the whole record. There is no prior state to diff against, and a
+  device replaying the log has nothing else to build the contact from.
+- **update** — the changed fields only, compared against the stored record
+  rather than against the patch. A patch that re-sends an unchanged field is
+  not an edit, and logging it as one manufactures conflicts elsewhere.
+- **merge** — a field-level diff of what moved onto the surviving contact,
+  keeping `mergedFrom` alongside so the history stays readable. Re-deriving the
+  result from the two originals would only agree if the other device held
+  byte-identical copies of both, which is exactly what cannot be assumed.
+- **tags, categories, organizations, relationships, notes** — their own
+  create/delete rows, with real payloads.
+
+Two decisions inside that are worth stating, because both are trade-offs:
+
+**A child collection is one field.** If any phone changes, the whole phone list
+is in the payload. This is not a shortcut — `write_children` replaces each
+collection wholesale, so the list genuinely is the unit that changed, and a log
+claiming finer granularity would not describe what the database did. The cost is
+real: two devices editing different phone numbers of one contact collide, where
+two devices editing the city and the profession merge cleanly.
+
+**Snapshots are read back from disk, not serialised from the input.** The ids of
+phones and e-mail addresses are minted during the write. A payload carrying
+`"id": null` would have each device inventing its own id for the same phone
+number, surfacing later as duplicates that no merge can reconcile because
+nothing links the two rows. The extra read per write is worth that.
+
+Cascading deletes — the join rows dropped when a tag or organization is deleted
+— are deliberately *not* logged. They follow deterministically from the parent
+id, so replaying the parent delete reproduces them. This obliges the apply side
+to perform the cascade, which SYNC.md now states as a rule.
+
+The count-based test is kept and joined by four that read the payloads: that
+what the user typed is in the log, that an edit logs the field that moved and
+not the ones that did not, that every entity kind is logged, and that a merge
+carries the details it moved across.
