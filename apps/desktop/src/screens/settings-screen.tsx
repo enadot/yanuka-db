@@ -104,28 +104,32 @@ export function SettingsScreen() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Database className="size-4" aria-hidden />
-            סנכרון
+            סנכרון בין מכשירים
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">סנכרון אחרון</span>
-            <span>
-              {stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'טרם בוצע'}
-            </span>
+            <span className="text-muted-foreground">מצב</span>
+            <span>עדיין לא פעיל</span>
           </div>
           <Separator />
           <div className="flex justify-between">
-            <span className="text-muted-foreground">שינויים ממתינים</span>
+            <span className="text-muted-foreground">שינויים שנרשמו לקראת סנכרון</span>
             <span className="numeric">{stats?.sync.pendingMutations ?? 0}</span>
           </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">התנגשויות פתוחות</span>
-            <span className="numeric">{stats?.sync.openConflicts ?? 0}</span>
-          </div>
+          {(stats?.sync.openConflicts ?? 0) > 0 ? (
+            <>
+              <Separator />
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">התנגשויות פתוחות</span>
+                <span className="numeric">{stats?.sync.openConflicts}</span>
+              </div>
+            </>
+          ) : null}
           <p className="pt-2 text-xs text-muted-foreground">
-            כל שינוי נרשם מקומית ומסונכרן כשהחיבור חוזר. המערכת עובדת במלואה גם ללא אינטרנט.
+            אין עדיין שרת ואין סנכרון בין מכשירים — הנתונים חיים במלואם במחשב הזה, והגיבוי היומי
+            הוא מה ששומר עליהם. הספירה למעלה אינה תקלה: כל שינוי נרשם ביומן שינויים כדי שכשסנכרון
+            יופעל, גם מה שנעשה עד אז יעבור איתו.
           </p>
         </CardContent>
       </Card>

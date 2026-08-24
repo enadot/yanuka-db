@@ -122,14 +122,34 @@ future ability to cut off a lost machine.
 
 Never the word "mutation".
 
+Once sync ships, three facts: the data is safe locally, when it last left the
+machine, and how much has not yet.
+
 ```
 מאגר מקומי: זמין
 סנכרון אחרון: לפני 5 דקות
 7 שינויים ממתינים לסנכרון
 ```
 
-Three facts: the data is safe locally, when it last left the machine, and how
-much has not yet. `SyncIndicator` shows exactly this.
+**Until then, `SyncIndicator` must not show that.** With no transport, "סנכרון
+אחרון: מעולם לא" and a permanently growing count of changes "waiting to sync"
+describe a stalled queue rather than a feature that has not been built, and
+that is precisely how they were read. On a product whose first promise is that
+nothing gets lost, an accurate line that reads as *your work is stuck* is worse
+than useless.
+
+So the indicator leads with the fact that is both true and reassuring today —
+the daily backup (ADR-028), which is the whole durability story while ADR-019
+is deferred:
+
+```
+מאגר מקומי: זמין
+גיבוי אחרון: לפני שעתיים
+```
+
+The mutation-log count moves to the tooltip and to הגדרות, framed as what it
+actually is: a record kept so that work done before sync exists travels with it
+when sync arrives. Swap this back the moment a transport lands.
 
 ## Rules for anyone implementing this
 
