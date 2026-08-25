@@ -6167,6 +6167,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tokio",
  "yanuka-db",
  "yanuka-search",
  "yanuka-sync-client",

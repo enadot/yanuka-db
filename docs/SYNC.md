@@ -6,8 +6,9 @@ order without being able to read them (ADR-035), `yanuka-sync-client` drives the
 loop (ADR-036), and a person settles what the merge refuses to (ADR-037). Two
 real databases exchanging changes through a real server are tested end to end.
 
-What remains: a background timer — syncing is a button in הגדרות today.
-ADR-019 is otherwise discharged.
+Since ADR-038 it also runs on a timer rather than on a button: five minutes
+while the server is reachable, backing off to at most thirty while it is not,
+and back to five the moment one round succeeds. ADR-019 is discharged.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the

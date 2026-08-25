@@ -31,6 +31,8 @@ use yanuka_sync_proto::{
     RegisterRequest, RegisterResponse, SyncKey,
 };
 
+pub mod schedule;
+
 mod settings;
 pub use settings::{clear, load, require, save, SyncSettings};
 

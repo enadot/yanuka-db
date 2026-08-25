@@ -8,6 +8,7 @@
 mod backup;
 mod commands;
 mod state;
+mod sync_loop;
 
 use state::AppState;
 use tauri::Manager;
@@ -45,6 +46,9 @@ pub fn run() {
                 }
             });
             app.manage(state);
+            // After `manage`: the loop resolves the state on every round, and
+            // the first thing it would do is look for something not yet there.
+            sync_loop::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

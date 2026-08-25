@@ -208,3 +208,19 @@ export async function resolveConflict(
 ): Promise<void> {
   await invoke('conflicts_resolve', { conflictId, choices });
 }
+
+/**
+ * Run `onChanged` whenever the background loop actually brought something in.
+ *
+ * Only on real news: the loop stays quiet on a round that moved nothing, so
+ * this does not turn into every screen refetching on a timer forever. Returns
+ * an unsubscribe function, and a no-op one in the browser build where there is
+ * no loop to listen to.
+ */
+export async function onSyncChanged(
+  onChanged: (outcome: SyncOutcome) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<SyncOutcome>('sync:changed', (event) => onChanged(event.payload));
+}

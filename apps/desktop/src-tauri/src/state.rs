@@ -14,6 +14,11 @@ pub struct AppState {
     connection: Mutex<Connection>,
     /// Where the database lives, for the backup commands.
     database_path: std::path::PathBuf,
+    /// Held for the duration of a sync round, by the background loop and by the
+    /// button in settings alike. Not a database lock — an async one, because
+    /// what it guards spans network calls, and the database is deliberately
+    /// released between them.
+    sync_gate: tauri::async_runtime::Mutex<()>,
 }
 
 impl AppState {
@@ -26,7 +31,11 @@ impl AppState {
         if applied > 0 {
             eprintln!("applied {applied} migration(s)");
         }
-        Ok(Self { connection: Mutex::new(connection), database_path: path.to_path_buf() })
+        Ok(Self {
+            connection: Mutex::new(connection),
+            database_path: path.to_path_buf(),
+            sync_gate: tauri::async_runtime::Mutex::new(()),
+        })
     }
 
     /// Run something against the database.
@@ -37,6 +46,11 @@ impl AppState {
     /// subsequent request would strand the user's data behind a dead lock.
     pub fn database_path(&self) -> &std::path::Path {
         &self.database_path
+    }
+
+    /// Serialises sync rounds. See the field, and `sync_loop`.
+    pub fn sync_gate(&self) -> &tauri::async_runtime::Mutex<()> {
+        &self.sync_gate
     }
 
     pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {

@@ -517,9 +517,13 @@ pub async fn sync_now(state: State<'_, AppState>) -> Result<Value, String> {
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "המכשיר אינו מחובר לשרת".to_string())?;
 
-    let outcome = yanuka_sync_client::sync_once(&*state, &mut settings)
-        .await
-        .map_err(|error| error.to_string())?;
+    // The same gate the background loop takes: pressing the button while a
+    // timed round is in flight should wait for it, not race it.
+    let outcome = {
+        let _gate = state.sync_gate().lock().await;
+        yanuka_sync_client::sync_once(&*state, &mut settings).await
+    }
+    .map_err(|error| error.to_string())?;
 
     serde_json::to_value(outcome).map_err(|error| error.to_string())
 }

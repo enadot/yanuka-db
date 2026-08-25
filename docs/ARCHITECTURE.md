@@ -117,21 +117,24 @@ Android intents — stay in the app.
 None of these are built. The point of listing them is that none of them require
 changing what exists.
 
-- **Server + sync.** `crates/yanuka-db/src/mutation.rs` already logs every write
-  with a per-field payload. A sync engine drains that table; nothing above the
-  repository interface changes. See SYNC.md.
 - **Web client.** Next.js app consuming `@yanuka/core` with a
   `HttpRepository`. Screens and ranking are reused as-is; only the repository
   implementation is new.
-- **Android.** React Native cannot use `@yanuka/ui` (it is DOM-based), but
-  `types`, `validation`, `utils`, `search` and `core` all apply unchanged.
 - **Postgres.** A second migrations directory under
   `packages/database/migrations/postgres`. The dialect differences are contained
   inside the repository implementation and never leak upward. See DATABASE.md.
 
-`apps/web`, `apps/mobile` and `server/` are deliberately *not* created as empty
-placeholders — empty packages slow the build, distort coverage and rot. Their
-shape is documented here instead; ADR-017.
+Two of the lines that used to be in that list are now built, and neither needed
+a new package. **Server + sync** drains the mutation log through
+`crates/yanuka-sync-{proto,server,client}`; nothing above the repository
+interface changed. See SYNC.md. **Android** turned out not to need React Native
+at all — Tauri runs the same bundle and the same Rust crates in an Android
+webview, so `@yanuka/ui` applies unchanged along with everything below it. See
+MOBILE.md.
+
+`apps/web` is deliberately *not* created as an empty placeholder — empty
+packages slow the build, distort coverage and rot. Its shape is documented here
+instead; ADR-017.
 
 ## Verification
 

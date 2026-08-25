@@ -41,7 +41,7 @@ apps/desktop        React + shadcn/ui frontend, and the Tauri shell
 crates/yanuka-db    rusqlite storage, migrations, FTS5 search    (no Tauri dep)
 crates/yanuka-search Hebrew normalization and ranking            (no Tauri dep)
 packages/           types · validation · utils · search · database · core · ui
-docs/               architecture, database, search, sync, security, decisions
+docs/               architecture, database, search, sync, mobile, security, decisions
 ```
 
 ## Importing an existing archive
@@ -214,7 +214,10 @@ Changes are not saved between runs; everything else behaves identically.
 Built and verified: the data model, the search engine, the local SQLite layer,
 and the Desktop MVP (search, list, detail, add, edit).
 
+Since then: sync between devices, a screen for deciding between two versions of
+one detail, and an Android build from this same source
+([`docs/SYNC.md`](docs/SYNC.md), [`docs/MOBILE.md`](docs/MOBILE.md)).
+
 Designed and deliberately deferred, each with its cost recorded in
-[`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, encryption at rest, CSV/OCR import, local semantic search, and the
-web and Android clients.
+[`docs/DECISIONS.md`](docs/DECISIONS.md): permission enforcement, encryption at
+rest, OCR import, local semantic search, and the web client.

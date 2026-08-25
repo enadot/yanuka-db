@@ -720,7 +720,8 @@ being refused without leaving settings behind, a wrong data key failing loudly
 instead of writing rubbish, and a same-field collision surfacing as a conflict
 rather than a loss.
 
-Still absent: a background timer — syncing is a button today.
+The background timer that this note used to say was missing arrived with
+ADR-038.
 
 
 ## ADR-037 — Resolving a conflict is a change that has to travel
@@ -777,3 +778,65 @@ open, the decided value is searchable, deciding twice is harmless) and by
 decided fields are sent, a second click replaces the first). Both guards —
 the losing-value baseline and `settle` — were checked by removing them and
 watching the tests fail.
+
+
+## ADR-038 — One codebase on the phone, and syncing without being asked
+
+**Status:** accepted · **Date:** 2026-08-25
+
+Android runs the same React bundle and the same Rust crates as Windows, through
+Tauri. The alternative — a separate mobile application talking to the server —
+would put the merge, conflict detection, tombstones, deferral and the search
+index in two languages, kept in step by hand. They drift, and the symptom of
+drift is a contact that looks different depending on which device you ask, with
+no single place to go and read what is correct. `yanuka-db` compiled for
+`aarch64-linux-android` is the same source that Windows runs; a bug fixed in the
+merge is fixed on the phone in the same commit.
+
+**Syncing moved off the button.** It was defensible while the only device was a
+desktop with a person sitting at it. It stops being defensible the moment a
+phone is involved: nobody opens a settings screen to press a button, so a phone
+that syncs only on demand holds contacts that are quietly out of date, and the
+staleness is invisible until it costs something.
+
+What makes the timing non-trivial is that this application is offline most of
+the time *by design*. A fixed interval means a machine that has been in a drawer
+for a week wakes and fails a network call every few minutes for a week. So the
+wait grows while nothing is reachable — one minute, then doubling to a
+half-hour ceiling — and returns to five minutes the moment a round succeeds,
+rather than easing back. Reaching the server once is proof the network is there,
+and a device that has just been handed a connection should not spend the next
+twenty minutes acting as though it might not have one. A device that was refused
+keeps the slowest pulse rather than stopping, so re-connecting in settings works
+without a restart. The policy is a pure function in `schedule.rs`, tested
+directly; the loop around it is not.
+
+The loop never reports being offline — that is this product's ordinary state,
+not an incident — and emits an event only when something actually moved, so
+screens refresh on real news and not on a heartbeat. It shares one async gate
+with the button in settings, because two rounds racing would write the cursor
+over each other.
+
+**The layout has one breakpoint.** Above `md`, the right-hand rail. Below it,
+navigation moves to the bottom of the screen where a thumb reaches, laid out as
+the last row of the column rather than floating over the content — so nothing is
+ever hidden behind it and no screen has to know it is there. The bar cannot
+carry the sync indicator the rail carries, so a mark appears on הגדרות when a
+decision is waiting: a conflict visible only on a screen nobody visits is a
+conflict nobody answers.
+
+**`gen/android` is committed**, against the repository's habit of ignoring
+everything generated. It is generated once and then edited — the Hebrew launcher
+name, `supportsRtl`, the icons — so re-running `tauri android init` on a fresh
+clone would silently discard all of it.
+
+Verified by a second Playwright project at a phone viewport, which asserts that
+navigation sits in the lower half and outside the scroll area, that every target
+clears 44px, that the desktop rail is gone rather than merely hidden, and that
+nothing on any screen reaches past the edge. That last check found a real bug
+the desktop suite could not: the header's search button was `w-full` inside a
+flex row, which at 100% ignores its sibling and the gap, pushing itself off the
+screen by the width of the logo beside it. The check is written by comparing
+element boxes to the body's box rather than `scrollWidth` to `clientWidth` —
+the obvious way reads as 20px of overflow on every page, including an empty one,
+because under mobile emulation `scrollWidth` includes the scrollbar gutter.

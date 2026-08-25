@@ -120,6 +120,8 @@ jobs:
       - run: pnpm build
       # Runs against the in-memory repository, so it exercises the real screens,
       # the real search engine and the real demo data without a Tauri shell.
+      # Both projects: a desktop viewport and a phone-sized one, the latter
+      # standing in for the Android webview on a runner with no emulator.
       - run: pnpm --filter @yanuka/desktop test:e2e
 
       - uses: actions/upload-artifact@v4
@@ -127,6 +129,50 @@ jobs:
         with:
           name: playwright-report
           path: apps/desktop/playwright-report
+          retention-days: 7
+
+  android:
+    name: android · debug apk
+    runs-on: ubuntu-latest
+    needs: [checks, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+      - name: Install the NDK the Gradle project expects
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # One architecture, not four. This job exists to prove the Rust side
+          # still compiles for Android and the Gradle project still assembles;
+          # a release for real devices is built deliberately, with a signing key
+          # this runner does not have.
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanuka/desktop tauri android build --debug --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanuka-android-debug
+          path: apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 7
 
   installer:

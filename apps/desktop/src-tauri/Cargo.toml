@@ -18,6 +18,11 @@ yanuka-db = { path = "../../../crates/yanuka-db" }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
 yanuka-sync-client = { path = "../../../crates/yanuka-sync-client" }
+# Only `time`, and only for the background sync loop's sleep. Tauri's async
+# runtime is tokio already, so this pulls nothing new into the binary; parking a
+# blocking thread for up to half an hour instead would be a thread spent to
+# avoid one line of manifest.
+tokio = { version = "1", default-features = false, features = ["time"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { workspace = true }
