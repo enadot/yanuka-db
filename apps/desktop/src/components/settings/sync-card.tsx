@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Link2, Link2Off, RefreshCw, Server } from 'lucide-react';
+import { Check, Copy, GitCompareArrows, Link2, Link2Off, RefreshCw, Server } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Button,
@@ -35,6 +36,7 @@ import { useIsLocalDatabase } from '../../lib/repository';
 export function SyncCard() {
   const isLocal = useIsLocalDatabase();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [code, setCode] = useState('');
   const [deviceName, setDeviceName] = useState('המחשב שלי');
@@ -75,6 +77,7 @@ export function SyncCard() {
         // something a person wrote, and both are still being kept.
         toast.warning(
           `${describe(outcome)}. ${outcome.conflicts} שינויים הגיעו בגרסה שונה מזו שכאן — שתי הגרסאות נשמרו.`,
+          { action: { label: 'להכרעה', onClick: () => navigate('/conflicts') } },
         );
       } else {
         toast.success(describe(outcome));
@@ -131,6 +134,22 @@ export function SyncCard() {
       </CardHeader>
 
       <CardContent className="space-y-4 text-sm">
+        {/* Outside the connected/not-connected split on purpose: disconnecting a
+            device does not answer the questions it is already holding, and a
+            decision nobody can reach is the same as a decision nobody made. */}
+        {status && status.openConflicts > 0 ? (
+          <Link
+            to="/conflicts"
+            className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-amber-700 hover:bg-amber-500/10"
+          >
+            <GitCompareArrows className="size-4 shrink-0" aria-hidden />
+            <span>
+              <span className="numeric">{status.openConflicts}</span> פרטים נכתבו אחרת בשני
+              מכשירים. שתי הגרסאות נשמרו — יש לבחור.
+            </span>
+          </Link>
+        ) : null}
+
         {!status?.connected ? (
           <>
             <p className="text-muted-foreground">
@@ -189,15 +208,6 @@ export function SyncCard() {
               <span className="text-muted-foreground">ממתין לשליחה</span>
               <span className="numeric">{status.pendingChanges}</span>
             </div>
-            {status.openConflicts > 0 ? (
-              <>
-                <Separator />
-                <div className="flex justify-between text-amber-600">
-                  <span>שינויים בשתי גרסאות</span>
-                  <span className="numeric">{status.openConflicts}</span>
-                </div>
-              </>
-            ) : null}
 
             <Button
               type="button"

@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use sqlx::postgres::PgPoolOptions;
+use yanuka_db::conflicts::{self, FieldChoice, Side};
 use yanuka_db::models::{ContactInput, ContactPatch, PhoneInput};
 use yanuka_db::{migrate, open_in_memory, repository, taxonomy};
 use yanuka_sync_client::{connect, sync_once, Database, OwnedDatabase, SyncSettings};
@@ -375,4 +376,73 @@ async fn the_same_field_changed_on_both_machines_becomes_a_conflict_not_a_loss()
         .unwrap();
     assert!(fields.contains("לונדון"), "the local value is not in the conflict record");
     assert!(fields.contains("אנטוורפן"), "the remote value was discarded");
+}
+
+#[tokio::test]
+async fn a_decision_about_a_conflict_travels_and_ends_it_on_both_machines() {
+    // The other half of the test above, and the one that would fail quietly.
+    // The user picks the version on the machine in front of them; nothing about
+    // that machine's data changes, so unless resolving writes a change of its
+    // own, the second machine keeps its own answer forever — two devices
+    // disagreeing, each believing itself settled, with nothing open to show it.
+    let fixture = require_server!("e2e_resolve");
+
+    let first = device();
+    let second = device();
+    let mut first_settings = join(&first, &fixture.code, "מחשב ראשי").await;
+    let mut second_settings = join(&second, &fixture.code, "מחשב שני").await;
+
+    let shared = create(&first, &contact("יעקב פרידמן"));
+    sync_once(&first, &mut first_settings).await.unwrap();
+    sync_once(&second, &mut second_settings).await.unwrap();
+
+    edit(
+        &first,
+        &shared,
+        ContactPatch { city: Some(Some("אנטוורפן".into())), ..Default::default() },
+    );
+    edit(
+        &second,
+        &shared,
+        ContactPatch { city: Some(Some("לונדון".into())), ..Default::default() },
+    );
+
+    // Each machine hears the other, and both are now holding the same question.
+    sync_once(&first, &mut first_settings).await.unwrap();
+    sync_once(&second, &mut second_settings).await.unwrap();
+    sync_once(&first, &mut first_settings).await.unwrap();
+
+    let open = first.with(|connection| conflicts::open(connection)).unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].display_name.as_deref(), Some("יעקב פרידמן"));
+
+    // On the first machine the user keeps what is already in front of them.
+    first
+        .with(|connection| {
+            conflicts::resolve(
+                connection,
+                &open[0].id,
+                &[FieldChoice { field: "city".into(), side: Side::Local }],
+            )
+        })
+        .unwrap();
+
+    sync_once(&first, &mut first_settings).await.unwrap();
+    let outcome = sync_once(&second, &mut second_settings).await.unwrap();
+
+    assert_eq!(outcome.conflicts, 0, "the decision was argued with instead of applied");
+    assert_eq!(
+        fetch(&second, &shared).unwrap().contact.city.as_deref(),
+        Some("אנטוורפן"),
+        "the second machine never heard the decision"
+    );
+    assert!(
+        second.with(|connection| conflicts::open(connection)).unwrap().is_empty(),
+        "the second machine is still asking a settled question"
+    );
+    assert!(
+        first.with(|connection| conflicts::open(connection)).unwrap().is_empty(),
+        "the machine that made the decision is still asking"
+    );
+    assert!(finds(&second, "אנטוורפן", &shared), "the decided value is not searchable");
 }

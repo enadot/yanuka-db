@@ -483,7 +483,7 @@ pub fn stats(connection: &Connection) -> Result<serde_json::Value> {
             "lastSyncAt": serde_json::Value::Null,
             "pendingMutations": crate::mutation::pending_count(connection)?,
             "failedMutations": count("SELECT COUNT(*) FROM mutations WHERE status = 'failed'")?,
-            "openConflicts": count("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL")?,
+            "openConflicts": crate::conflicts::open_count(connection)?,
             "syncing": false,
         }
     }))

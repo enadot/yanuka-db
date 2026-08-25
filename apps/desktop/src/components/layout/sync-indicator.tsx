@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { HardDrive } from 'lucide-react';
 import { formatRelative } from '@yanuka/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@yanuka/ui';
@@ -56,7 +57,11 @@ export function SyncIndicator() {
                 <div className="text-amber-600">{pending} שינויים ממתינים לשליחה</div>
               ) : null}
               {sync.openConflicts > 0 ? (
-                <div className="text-amber-600">{sync.openConflicts} שינויים בשתי גרסאות</div>
+                // A count on its own would be a dead end: it names a decision
+                // without offering anywhere to make it.
+                <Link to="/conflicts" className="block text-amber-600 hover:underline">
+                  {sync.openConflicts} פרטים ממתינים להכרעה
+                </Link>
               ) : null}
             </>
           ) : (

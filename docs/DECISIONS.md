@@ -720,6 +720,60 @@ being refused without leaving settings behind, a wrong data key failing loudly
 instead of writing rubbish, and a same-field collision surfacing as a conflict
 rather than a loss.
 
-Still absent: a background timer (syncing is a button today), and a screen for
-resolving conflicts — they are recorded and counted and surfaced in a toast, but
-choosing between two versions still means editing the contact by hand.
+Still absent: a background timer — syncing is a button today.
+
+
+## ADR-037 — Resolving a conflict is a change that has to travel
+
+**Status:** accepted · **Date:** 2026-08-25
+
+Conflicts were recorded, counted and announced in a toast, and answered by
+opening the contact and retyping the winning value by hand — reading a phone
+number off one panel and typing it into another, which is precisely the
+operation a person gets wrong. `/conflicts` replaces that with a choice.
+
+The screen is the easy half. The half worth writing down is what a decision has
+to do.
+
+**A conflict is symmetric.** This device holds X and the other holds Y, and both
+have an open record. Choosing X changes nothing locally, so the ordinary "log
+what changed" path records nothing and the other device keeps Y indefinitely —
+two machines quietly disagreeing, each believing itself settled, with no open
+question anywhere to show it. So `resolve` writes its own mutation rather than
+relying on the write it just made.
+
+**The baseline is the losing value, not the local one.** The mutation's
+`previous` is set to whatever lost. That is the state the *other* device is in,
+so when the decision arrives there the three-way merge finds `previous` equal to
+what it holds, and applies the decision as a plain update. Setting `previous` to
+the local value instead — the obvious thing — makes the other device see a
+disagreement with its own copy and raise a second conflict about a field that
+was just settled. Two tests fail when it is written that way; that was checked
+by writing it that way.
+
+**A conflict can stop being one without anybody choosing.** When the other
+device decides first, its choice arrives here as an ordinary change and both
+sides end up agreeing. `apply` now reports which fields the two devices agree on
+after a merge, and `conflicts::settle` closes any open record naming them. Left
+out, the user is asked to decide something already settled — and each
+non-question spends attention the next real question needs.
+
+**Nothing is preselected**, and the save button stays disabled until something
+is chosen. A default here is a decision made on the user's behalf about data
+they typed. A field may also be left open: deciding one and deferring another is
+a supported outcome, not an abandoned form.
+
+Two smaller things fell out of it. The conflict record's JSON shape had a writer
+in `apply.rs` and no reader anywhere, so a renamed key would have gone unnoticed
+until a user saw it; both sides now go through one `FieldConflict` struct. And
+the entry point sits outside the connected/not-connected split in the settings
+card, because disconnecting a device does not answer the questions it is already
+holding, and a decision nobody can reach is the same as a decision nobody made.
+
+Verified by `crates/yanuka-db/tests/conflicts.rs` (two real databases: a
+decision made on either side settles both, a partial choice leaves the rest
+open, the decided value is searchable, deciding twice is harmless) and by
+`apps/desktop/src/screens/conflicts-screen.test.tsx` (nothing preselected, only
+decided fields are sent, a second click replaces the first). Both guards —
+the losing-value baseline and `settle` — were checked by removing them and
+watching the tests fail.

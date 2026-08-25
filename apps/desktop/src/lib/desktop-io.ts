@@ -163,3 +163,48 @@ export async function syncShareCode(enrolmentSecret: string): Promise<string> {
 export async function syncDisconnect(): Promise<void> {
   await invoke('sync_disconnect');
 }
+
+// ---------------------------------------------------------------------------
+// Conflicts
+// ---------------------------------------------------------------------------
+
+/** One field two devices answered differently. Both answers are kept. */
+export interface FieldConflict {
+  field: string;
+  localValue: unknown;
+  remoteValue: unknown;
+  localUpdatedAt: string;
+  remoteUpdatedAt: string;
+  localDeviceId: string | null;
+  remoteDeviceId: string | null;
+}
+
+export interface OpenConflict {
+  id: string;
+  entityType: string;
+  entityId: string;
+  displayName: string | null;
+  detectedAt: string;
+  fields: FieldConflict[];
+}
+
+export type ConflictSide = 'local' | 'remote';
+
+export interface FieldChoice {
+  field: string;
+  side: ConflictSide;
+}
+
+export async function openConflicts(): Promise<OpenConflict[]> {
+  // The browser build has no sync and therefore nothing to decide. An empty
+  // list rather than a thrown error, so the screen renders its empty state.
+  if (!isTauri()) return [];
+  return (await invoke('conflicts_open')) as OpenConflict[];
+}
+
+export async function resolveConflict(
+  conflictId: string,
+  choices: FieldChoice[],
+): Promise<void> {
+  await invoke('conflicts_resolve', { conflictId, choices });
+}

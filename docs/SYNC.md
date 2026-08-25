@@ -2,13 +2,12 @@
 
 **Status: implemented.** The mutation log records the change (ADR-033),
 `apply.rs` folds in a remote one (ADR-034), `yanuka-sync-server` keeps them in
-order without being able to read them (ADR-035), and `yanuka-sync-client` drives
-the loop (ADR-036). Two real databases exchanging changes through a real server
-are tested end to end.
+order without being able to read them (ADR-035), `yanuka-sync-client` drives the
+loop (ADR-036), and a person settles what the merge refuses to (ADR-037). Two
+real databases exchanging changes through a real server are tested end to end.
 
-What remains: a background timer — syncing is a button in הגדרות today — and a
-screen for resolving conflicts, which are recorded and reported but resolved by
-editing the contact by hand. ADR-019 is otherwise discharged.
+What remains: a background timer — syncing is a button in הגדרות today.
+ADR-019 is otherwise discharged.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -137,18 +136,45 @@ Desktop:  phone = 054-…          Android:  phone = 052-…
 ```
 
 Same field → a real conflict. **Both values are kept** in `conflicts` and the
-user is asked:
+user is asked, on `/conflicts`:
 
 ```
-נמצאו שתי גרסאות
-  גרסת Desktop: 054-…
-  גרסת Android: 052-…
-[בחר Desktop]  [בחר Android]  [ערוך ידנית]
+יעקב פרידמן
+  עיר
+  [ במחשב הזה        ] [ הגיע ממכשיר אחר  ]
+  [ אנטוורפן         ] [ לונדון           ]
+  [ 19.8.26, 12:00   ] [ 20.8.26, 11:00   ]
+                              [ שמירת הבחירה ]
 ```
 
 Never resolved silently, and never by last-write-wins on a timestamp. Clocks on
 two machines that have been offline are not comparable, and picking a winner
 means throwing away something a human typed on purpose.
+
+Nothing on that screen is preselected. A default would be a decision made on the
+user's behalf about data they typed, confirmable with one careless click. The
+save button stays disabled until something is actually chosen, and a field may
+be left open — some disagreements need a phone call before they can be settled,
+and the one that does not should not have to wait for the one that does.
+
+### A decision is itself a change
+
+The conflict is symmetric: this device holds X, the other holds Y, and both have
+an open record. Choosing X changes nothing here, so the ordinary "log what
+changed" path would record nothing and the other device would keep Y forever —
+two machines quietly disagreeing, each believing itself settled.
+
+So `conflicts::resolve` writes its own mutation, and sets `previous` to the
+**losing** value rather than the local one. That is exactly the baseline the
+other device needs: it compares `previous` against what it holds, finds them
+equal, and takes the decision as a plain update instead of raising a second
+conflict about the same field.
+
+The reverse also has to hold. When the other device decides first, its choice
+arrives here as an ordinary change and both sides end up agreeing — so
+`apply` reports the fields the two devices now agree on and `conflicts::settle`
+closes any open record naming them. Every question that turns out not to be one
+costs attention the next real question needs.
 
 The comparison that decides this is against `previous`, **not** against the
 version number. A version moves when any field changes, so it cannot tell

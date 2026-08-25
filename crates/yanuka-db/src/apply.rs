@@ -36,6 +36,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::conflicts::{self, FieldConflict};
 use crate::error::{DbError, Result};
 use crate::index::reindex_contact;
 use crate::models::{ContactInput, Ulid};
@@ -234,8 +235,12 @@ fn merge_contact(
     let local_value = serde_json::to_value(as_input(stored))?;
     let mut merged = local_value.as_object().cloned().unwrap_or_default();
 
-    let mut conflicts: Vec<Value> = Vec::new();
+    let mut conflicts: Vec<FieldConflict> = Vec::new();
     let mut conflicted: Vec<String> = Vec::new();
+    // Fields the two devices now hold the same value for. Any open conflict
+    // naming one of them has been answered by this change arriving, and is
+    // closed below rather than left for a person to decide again.
+    let mut agreed: Vec<String> = Vec::new();
 
     for (field, incoming) in payload {
         // Bookkeeping the merge module adds to describe a merge; it names an
@@ -245,7 +250,8 @@ fn merge_contact(
         }
         let here = merged.get(field);
         if here == Some(incoming) {
-            continue; // Both sides already agree.
+            agreed.push(field.clone()); // Both sides already agree.
+            continue;
         }
 
         let untouched_here = match base.get(field) {
@@ -263,17 +269,18 @@ fn merge_contact(
 
         if untouched_here {
             merged.insert(field.clone(), incoming.clone());
+            agreed.push(field.clone());
         } else {
             conflicted.push(field.clone());
-            conflicts.push(serde_json::json!({
-                "field": field,
-                "localValue": here.cloned().unwrap_or(Value::Null),
-                "remoteValue": incoming.clone(),
-                "localUpdatedAt": stored.contact.updated_at,
-                "remoteUpdatedAt": remote.created_at,
-                "localDeviceId": stored.contact.device_id,
-                "remoteDeviceId": remote.device_id,
-            }));
+            conflicts.push(FieldConflict {
+                field: field.clone(),
+                local_value: here.cloned().unwrap_or(Value::Null),
+                remote_value: incoming.clone(),
+                local_updated_at: stored.contact.updated_at.clone(),
+                remote_updated_at: remote.created_at.clone(),
+                local_device_id: stored.contact.device_id.clone(),
+                remote_device_id: Some(remote.device_id.clone()),
+            });
         }
     }
 
@@ -289,6 +296,10 @@ fn merge_contact(
     )?;
     reindex_contact(tx, &remote.entity_id)?;
 
+    // Before recording anything new: whatever this change settled is settled,
+    // including when the same change also disagrees about something else.
+    conflicts::settle(tx, &remote.entity_id, &agreed)?;
+
     if conflicts.is_empty() {
         return Ok(Applied::Applied);
     }
@@ -296,7 +307,7 @@ fn merge_contact(
     tx.execute(
         "INSERT INTO conflicts (id, entity_type, entity_id, fields, detected_at)
          VALUES (?1, 'contact', ?2, ?3, ?4)",
-        params![new_id(), remote.entity_id, Value::Array(conflicts).to_string(), now_iso(),],
+        params![new_id(), remote.entity_id, serde_json::to_string(&conflicts)?, now_iso()],
     )?;
     Ok(Applied::Conflicted(conflicted))
 }

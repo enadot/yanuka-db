@@ -11,6 +11,7 @@
 
 pub mod apply;
 pub mod backup;
+pub mod conflicts;
 pub mod connection;
 pub mod error;
 pub mod index;

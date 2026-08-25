@@ -254,4 +254,6 @@ export const IPC_COMMANDS = [
   'sync_now',
   'sync_share_code',
   'sync_disconnect',
+  'conflicts_open',
+  'conflicts_resolve',
 ] as const;

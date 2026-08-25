@@ -481,11 +481,7 @@ pub fn sync_status(state: State<'_, AppState>) -> Answer<Value> {
     state.with(|connection| {
         let settings = yanuka_sync_client::load(connection)?;
         let pending = yanuka_db::mutation::pending_count(connection)?;
-        let conflicts: i64 = connection.query_row(
-            "SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL",
-            [],
-            |row| row.get(0),
-        )?;
+        let conflicts = yanuka_db::conflicts::open_count(connection)?;
 
         Ok(serde_json::json!({
             "connected": settings.is_some(),
@@ -551,4 +547,30 @@ pub fn sync_share_code(
 #[tauri::command]
 pub fn sync_disconnect(state: State<'_, AppState>) -> Answer<()> {
     state.with(|connection| yanuka_sync_client::clear(connection))
+}
+
+// ---------------------------------------------------------------------------
+// Conflicts
+// ---------------------------------------------------------------------------
+
+/// Every disagreement still waiting on a person.
+#[tauri::command]
+pub fn conflicts_open(
+    state: State<'_, AppState>,
+) -> Answer<Vec<yanuka_db::conflicts::OpenConflict>> {
+    state.with(|connection| yanuka_db::conflicts::open(connection))
+}
+
+/// Record which answer the person kept.
+///
+/// Fields not named in `choices` stay open, so a contact with one obvious
+/// disagreement and one that needs a phone call does not have to wait for the
+/// phone call.
+#[tauri::command]
+pub fn conflicts_resolve(
+    state: State<'_, AppState>,
+    conflict_id: String,
+    choices: Vec<yanuka_db::conflicts::FieldChoice>,
+) -> Answer<()> {
+    state.with(|connection| yanuka_db::conflicts::resolve(connection, &conflict_id, &choices))
 }

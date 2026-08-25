@@ -89,6 +89,8 @@ pub fn run() {
             commands::sync_now,
             commands::sync_share_code,
             commands::sync_disconnect,
+            commands::conflicts_open,
+            commands::conflicts_resolve,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
