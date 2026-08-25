@@ -1,4 +1,4 @@
-import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
+import { DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
@@ -15,6 +15,7 @@ import {
 } from '@yanuka/ui';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { SyncCard } from '../components/settings/sync-card';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
 import { backupNow, backupStatus, exportContactsCsv, type BackupStatus } from '../lib/desktop-io';
 import { useRepository } from '../lib/repository';
@@ -24,9 +25,8 @@ import { useIsLocalDatabase } from '../lib/repository';
  * Settings and database status.
  *
  * Reports what is actually true about this installation rather than offering
- * options that do not exist yet. The sync and permissions sections will appear
- * here when the server lands; until then, saying so plainly is better than a
- * disabled toggle.
+ * options that do not exist yet. Permissions will appear here when there is
+ * more than one person; until then, saying so plainly beats a disabled toggle.
  */
 export function SettingsScreen() {
   const { data: stats } = useDatabaseStats();
@@ -100,39 +100,7 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="size-4" aria-hidden />
-            סנכרון בין מכשירים
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">מצב</span>
-            <span>עדיין לא פעיל</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">שינויים שנרשמו לקראת סנכרון</span>
-            <span className="numeric">{stats?.sync.pendingMutations ?? 0}</span>
-          </div>
-          {(stats?.sync.openConflicts ?? 0) > 0 ? (
-            <>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">התנגשויות פתוחות</span>
-                <span className="numeric">{stats?.sync.openConflicts}</span>
-              </div>
-            </>
-          ) : null}
-          <p className="pt-2 text-xs text-muted-foreground">
-            אין עדיין שרת ואין סנכרון בין מכשירים — הנתונים חיים במלואם במחשב הזה, והגיבוי היומי
-            הוא מה ששומר עליהם. הספירה למעלה אינה תקלה: כל שינוי נרשם ביומן שינויים כדי שכשסנכרון
-            יופעל, גם מה שנעשה עד אז יעבור איתו.
-          </p>
-        </CardContent>
-      </Card>
+      <SyncCard />
 
       <Card>
         <CardHeader>

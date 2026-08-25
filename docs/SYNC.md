@@ -1,16 +1,14 @@
 # SYNC
 
-**Status: both local halves implemented, transport not.** Every local change
-appends a mutation carrying the change itself (ADR-033), and `apply.rs` folds a
-mutation from another device into this one, merging per field and recording
-genuine collisions (ADR-034). `crates/yanuka-db/tests/sync.rs` runs two real
-databases and moves mutations between them by hand, which is what a sync engine
-will do once there is one.
+**Status: implemented.** The mutation log records the change (ADR-033),
+`apply.rs` folds in a remote one (ADR-034), `yanuka-sync-server` keeps them in
+order without being able to read them (ADR-035), and `yanuka-sync-client` drives
+the loop (ADR-036). Two real databases exchanging changes through a real server
+are tested end to end.
 
-The courier now exists too: `crates/yanuka-sync-server` stores an ordered log of
-sealed envelopes and hands them back by cursor, tested against a real
-PostgreSQL (ADR-035, docs/DEPLOY.md). What remains is the loop on the device
-that drives push and pull, and a screen for resolving conflicts. See ADR-019.
+What remains: a background timer — syncing is a button in הגדרות today — and a
+screen for resolving conflicts, which are recorded and reported but resolved by
+editing the contact by hand. ADR-019 is otherwise discharged.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -204,25 +202,23 @@ machine, and how much has not yet.
 7 שינויים ממתינים לסנכרון
 ```
 
-**Until then, `SyncIndicator` must not show that.** With no transport, "סנכרון
-אחרון: מעולם לא" and a permanently growing count of changes "waiting to sync"
-describe a stalled queue rather than a feature that has not been built, and
-that is precisely how they were read. On a product whose first promise is that
-nothing gets lost, an accurate line that reads as *your work is stuck* is worse
-than useless.
+**But only once this device has been connected.** A device that has never
+joined a server has nothing to say about syncing, and saying "סנכרון אחרון:
+מעולם לא" at it describes a stalled queue rather than a feature it has not
+opted into. That is how it was read the first time, and it sent the user
+looking for a failure that did not exist.
 
-So the indicator leads with the fact that is both true and reassuring today —
-the daily backup (ADR-028), which is the whole durability story while ADR-019
-is deferred:
+So the indicator follows the device's state, not the project's roadmap. Not
+connected, it leads with the daily backup (ADR-028), which is what protects the
+archive when nothing else does:
 
 ```
 מאגר מקומי: זמין
 גיבוי אחרון: לפני שעתיים
 ```
 
-The mutation-log count moves to the tooltip and to הגדרות, framed as what it
-actually is: a record kept so that work done before sync exists travels with it
-when sync arrives. Swap this back the moment a transport lands.
+The rule, for whoever changes this next: never show a counter that cannot go
+down, and never report an absence as a failure.
 
 ## Rules for anyone implementing this
 

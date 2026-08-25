@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/yanuka-db",
   "crates/yanuka-search",
+  "crates/yanuka-sync-client",
   "crates/yanuka-sync-proto",
   "crates/yanuka-sync-server",
   "apps/desktop/src-tauri",

@@ -108,3 +108,58 @@ export async function exportContactsCsv(
   URL.revokeObjectURL(url);
   return fileName;
 }
+
+/**
+ * Sync, from the frontend's side.
+ *
+ * Desktop only, and honest about it: the browser build has an in-memory
+ * repository with nothing durable to sync, so these report "not connected"
+ * rather than pretending or throwing. That keeps the settings screen renderable
+ * in the demo build, which is where its layout is actually reviewed.
+ */
+
+export interface SyncStatus {
+  connected: boolean;
+  serverUrl: string | null;
+  lastSyncAt: string | null;
+  pendingChanges: number;
+  openConflicts: number;
+}
+
+export interface SyncOutcome {
+  pushed: number;
+  pulled: number;
+  applied: number;
+  conflicts: number;
+  deferred: number;
+  cursor: number;
+}
+
+const DISCONNECTED: SyncStatus = {
+  connected: false,
+  serverUrl: null,
+  lastSyncAt: null,
+  pendingChanges: 0,
+  openConflicts: 0,
+};
+
+export async function syncStatus(): Promise<SyncStatus> {
+  if (!isTauri()) return DISCONNECTED;
+  return (await invoke('sync_status')) as SyncStatus;
+}
+
+export async function syncConnect(code: string, deviceName: string): Promise<SyncOutcome> {
+  return (await invoke('sync_connect', { code, deviceName })) as SyncOutcome;
+}
+
+export async function syncNow(): Promise<SyncOutcome> {
+  return (await invoke('sync_now')) as SyncOutcome;
+}
+
+export async function syncShareCode(enrolmentSecret: string): Promise<string> {
+  return (await invoke('sync_share_code', { enrolmentSecret })) as string;
+}
+
+export async function syncDisconnect(): Promise<void> {
+  await invoke('sync_disconnect');
+}

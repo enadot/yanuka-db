@@ -71,10 +71,13 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: >-
           cargo clippy -p yanuka-db -p yanuka-search
-          -p yanuka-sync-proto -p yanuka-sync-server
+          -p yanuka-sync-proto -p yanuka-sync-server -p yanuka-sync-client
           --all-targets -- -D warnings
       - run: cargo test -p yanuka-db -p yanuka-search -p yanuka-sync-proto
-      - run: cargo test -p yanuka-sync-server
+      # These need the database. The client suite runs a real server on a real
+      # port and drives two real SQLite databases through it, which is the only
+      # place the three layers are proven to compose.
+      - run: cargo test -p yanuka-sync-server -p yanuka-sync-client
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/yanuka_sync_test
 

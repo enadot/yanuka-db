@@ -44,3 +44,15 @@ impl AppState {
         f(&mut guard)
     }
 }
+
+/// The sync loop borrows the database the same way every screen does.
+///
+/// Implementing the trait rather than handing the loop a connection is what
+/// keeps the mutex from being held across a network request — which, on a
+/// machine whose connection may be slow or absent, would mean the whole
+/// interface freezing until an HTTP call finished or timed out.
+impl yanuka_sync_client::Database for AppState {
+    fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
+        AppState::with(self, f)
+    }
+}

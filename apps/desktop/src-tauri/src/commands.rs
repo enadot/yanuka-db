@@ -461,3 +461,94 @@ pub fn save_exported_csv(path: String, contents: String) -> Answer<String> {
         .map_err(|error| DbError::Validation(format!("שמירת הקובץ נכשלה: {error}")))?;
     Ok(path)
 }
+
+// ---------------------------------------------------------------------------
+// Sync
+// ---------------------------------------------------------------------------
+//
+// The only commands here that touch the network, and the only ones that are
+// `async`. Errors come back as plain strings rather than `DbError` because most
+// of what can go wrong is not a database problem — an unreachable server, a
+// mistyped connection code, a revoked device — and each already carries a
+// sentence written for the person reading it.
+
+/// What the settings screen and the offline indicator need to know.
+///
+/// Answers "is my work safe and has it left this machine" without the word
+/// "mutation" appearing anywhere.
+#[tauri::command]
+pub fn sync_status(state: State<'_, AppState>) -> Answer<Value> {
+    state.with(|connection| {
+        let settings = yanuka_sync_client::load(connection)?;
+        let pending = yanuka_db::mutation::pending_count(connection)?;
+        let conflicts: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+
+        Ok(serde_json::json!({
+            "connected": settings.is_some(),
+            "serverUrl": settings.as_ref().map(|s| s.server_url.clone()),
+            "lastSyncAt": settings.as_ref().and_then(|s| s.last_sync_at.clone()),
+            "pendingChanges": pending,
+            "openConflicts": conflicts,
+        }))
+    })
+}
+
+/// Join this device to a server with a pasted connection code.
+#[tauri::command]
+pub async fn sync_connect(
+    state: State<'_, AppState>,
+    code: String,
+    device_name: String,
+) -> Result<Value, String> {
+    yanuka_sync_client::connect(&*state, &code, &device_name, "desktop")
+        .await
+        .map_err(|error| error.to_string())?;
+    // Straight into a first round, because a connection screen that says
+    // "connected" and shows an empty archive has not finished the job the user
+    // asked for.
+    sync_now(state).await
+}
+
+/// Send what is local, fetch what is not.
+#[tauri::command]
+pub async fn sync_now(state: State<'_, AppState>) -> Result<Value, String> {
+    let mut settings = state
+        .with(|connection| yanuka_sync_client::load(connection))
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "המכשיר אינו מחובר לשרת".to_string())?;
+
+    let outcome = yanuka_sync_client::sync_once(&*state, &mut settings)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    serde_json::to_value(outcome).map_err(|error| error.to_string())
+}
+
+/// A code for adding another device to this same archive.
+///
+/// The enrolment secret is supplied by the caller rather than stored: this
+/// device holds a token, not the secret, and a machine that could mint
+/// enrolment codes from its own credentials would turn one compromised laptop
+/// into permission to add more.
+#[tauri::command]
+pub fn sync_share_code(
+    state: State<'_, AppState>,
+    enrolment_secret: String,
+) -> Result<String, String> {
+    let settings = state
+        .with(|connection| yanuka_sync_client::load(connection))
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "המכשיר אינו מחובר לשרת".to_string())?;
+    Ok(yanuka_sync_client::share_code(&settings, enrolment_secret.trim()))
+}
+
+/// Forget the server. The contacts and the pending log both stay, so a device
+/// that is disconnected and later reconnected sends everything it did between.
+#[tauri::command]
+pub fn sync_disconnect(state: State<'_, AppState>) -> Answer<()> {
+    state.with(|connection| yanuka_sync_client::clear(connection))
+}

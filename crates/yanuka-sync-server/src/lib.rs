@@ -317,12 +317,13 @@ async fn pull(
     let cursor = page.last().map(|row| row.0).unwrap_or(params.after);
     let envelopes = page
         .iter()
-        .map(|(_, id, device_id, created_at, nonce, ciphertext)| Envelope {
+        .map(|(seq, id, device_id, created_at, nonce, ciphertext)| Envelope {
             id: id.clone(),
             device_id: device_id.clone(),
             created_at: created_at.clone(),
             nonce: nonce.clone(),
             ciphertext: ciphertext.clone(),
+            seq: Some(*seq),
         })
         .collect();
 

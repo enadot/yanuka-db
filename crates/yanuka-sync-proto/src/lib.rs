@@ -60,6 +60,15 @@ pub struct Envelope {
     pub nonce: String,
     /// Base64url, unpadded.
     pub ciphertext: String,
+    /// Where this sits in the server's order. Absent on the way up — the server
+    /// assigns it — and present on the way down.
+    ///
+    /// The client needs it per envelope, not just per page: when one change
+    /// cannot be applied yet (a note whose contact has not arrived), the cursor
+    /// must stop *below* that change rather than past it, or the next pull skips
+    /// it forever. A single cursor for the whole page cannot express that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seq: Option<Cursor>,
 }
 
 /// Where a device has read up to. Monotonic, assigned by the server.
@@ -179,6 +188,7 @@ impl SyncKey {
             created_at: created_at.to_string(),
             nonce: URL_SAFE_NO_PAD.encode(nonce),
             ciphertext: URL_SAFE_NO_PAD.encode(ciphertext),
+            seq: None,
         })
     }
 

@@ -249,4 +249,9 @@ export const IPC_COMMANDS = [
   'backup_status',
   'save_exported_csv',
   'audit_log',
+  'sync_status',
+  'sync_connect',
+  'sync_now',
+  'sync_share_code',
+  'sync_disconnect',
 ] as const;

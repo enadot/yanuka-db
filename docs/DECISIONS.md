@@ -667,3 +667,59 @@ Costs, stated rather than discovered later:
 
 Deployment is Fly.io with managed Postgres, per the hosting decision; nothing
 but `fly.toml` is specific to it. See docs/DEPLOY.md.
+
+## ADR-036 — The sync loop, and never holding the database across the network
+
+The three earlier stages each worked in isolation: the log records the change
+(ADR-033), the apply path folds in a remote one (ADR-034), the server keeps
+them in order (ADR-035). `yanuka-sync-client` is what makes them one system —
+seal, send, fetch, open, hand to `apply`. There is deliberately no cleverness
+left in it.
+
+**The loop borrows the database through a trait, never across an await.** The
+first version took a `&mut Connection` for the whole round, which reads fine
+and would have frozen the interface for the duration of every HTTP request:
+the desktop keeps one connection behind a mutex that every screen also needs.
+On the one product whose defining claim is that it works regardless of the
+network, an interface that stops responding when the network is slow is an
+unusually bad failure. The `Database` trait takes the lock inside a closure and
+releases it before any request, and the desktop's `AppState` implements it with
+the same `with` every command already uses.
+
+**A change is marked settled only after the server confirms it stored it.**
+Anything else stays pending and is sent again. Sending twice is free — the
+mutation id makes the second delivery a no-op at both ends — and the opposite
+error, dropping something from the queue that never arrived, is silent and
+permanent.
+
+**The cursor follows what was applied, not what was fetched.** When one change
+cannot be applied yet, the cursor stops below it rather than past it. This is
+why `Envelope` carries a per-item `seq`: a single cursor for a whole page cannot
+express "everything up to here, but not that one", and advancing past a deferred
+change means never asking for it again.
+
+**Two secrets, one paste.** A `ConnectionCode` bundles the server address, the
+enrolment secret and the data key into one string. The enrolment secret is *not*
+stored on the device — a machine that could mint enrolment codes from its own
+credentials would turn one stolen laptop into permission to add more devices —
+so producing a code for a new machine asks for it. That is a real inconvenience
+and the correct one.
+
+The offline indicator changed for the third time, and the reason is the point:
+it now follows the device's actual state rather than the project's roadmap.
+Connected, it says when work last left and how much has not. Not connected, it
+says when the last backup was taken. Neither version says "never" to a user who
+has done nothing wrong. See the note in SYNC.md.
+
+Verified by `crates/yanuka-sync-client/tests/end_to_end.rs`: two real SQLite
+databases, a real axum server on a real port, real PostgreSQL, real HTTP, real
+sealing. It covers a contact typed on one machine appearing *and being
+searchable* on the other, both machines working offline and reconciling, a
+replacement machine rebuilding the archive from nothing, a wrong connection code
+being refused without leaving settings behind, a wrong data key failing loudly
+instead of writing rubbish, and a same-field collision surfacing as a conflict
+rather than a loss.
+
+Still absent: a background timer (syncing is a button today), and a screen for
+resolving conflicts — they are recorded and counted and surfaced in a toast, but
+choosing between two versions still means editing the contact by hand.

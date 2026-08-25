@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 yanuka-db = { path = "../../../crates/yanuka-db" }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
+yanuka-sync-client = { path = "../../../crates/yanuka-sync-client" }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { workspace = true }

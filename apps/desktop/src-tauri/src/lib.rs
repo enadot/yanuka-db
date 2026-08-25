@@ -84,6 +84,11 @@ pub fn run() {
             commands::backup_status,
             commands::save_exported_csv,
             commands::audit_log,
+            commands::sync_status,
+            commands::sync_connect,
+            commands::sync_now,
+            commands::sync_share_code,
+            commands::sync_disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
