@@ -27,16 +27,20 @@ export function SyncIndicator() {
             מאגר מקומי: זמין
           </div>
           <div className="text-muted-foreground">
-            סנכרון אחרון: {formatRelative(data?.sync.lastSyncAt ?? null)}
+            {data?.sync.lastSyncAt
+              ? `סנכרון אחרון: ${formatRelative(data.sync.lastSyncAt)}`
+              : 'סנכרון: עדיין לא הוקם שרת'}
           </div>
           {pending > 0 ? (
-            <div className="text-amber-600">{pending} שינויים ממתינים לסנכרון</div>
+            <div className="text-muted-foreground">
+              <span className="numeric">{pending}</span> שינויים רשומים ביומן
+            </div>
           ) : null}
         </div>
       </TooltipTrigger>
       <TooltipContent side="left" className="max-w-64">
         {isLocal
-          ? 'המידע נשמר במסד נתונים מקומי במחשב זה ועובד גם ללא אינטרנט. סנכרון לשרת יתבצע כשהחיבור יחזור.'
+          ? 'המידע נשמר במסד נתונים מקומי במחשב זה, ללא תלות באינטרנט. שרת סנכרון עדיין לא הוקם — כל שינוי נרשם ביומן מקומי, וכשיוקם שרת הכול יסונכרן אליו.'
           : 'הרצה במצב הדגמה: הנתונים נטענים לזיכרון בלבד ולא נשמרים.'}
       </TooltipContent>
     </Tooltip>

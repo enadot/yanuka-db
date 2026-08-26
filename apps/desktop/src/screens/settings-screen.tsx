@@ -80,7 +80,7 @@ export function SettingsScreen() {
           <AlertTitle>מצב הדגמה</AlertTitle>
           <AlertDescription>
             האפליקציה פועלת כעת בדפדפן עם נתוני דוגמה בזיכרון. שינויים לא נשמרים בין הפעלות. בגרסת
-            שולחן העבודה המידע נשמר במסד נתונים מקומי מוצפן.
+            שולחן העבודה המידע נשמר במסד נתונים מקומי.
           </AlertDescription>
         </Alert>
       ) : null}
@@ -110,7 +110,9 @@ export function SettingsScreen() {
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">סנכרון אחרון</span>
-            <span>{stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'טרם בוצע'}</span>
+            <span>
+              {stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'אין עדיין שרת'}
+            </span>
           </div>
           <Separator />
           <div className="flex justify-between">
@@ -123,7 +125,9 @@ export function SettingsScreen() {
             <span className="numeric">{stats?.sync.openConflicts ?? 0}</span>
           </div>
           <p className="pt-2 text-xs text-muted-foreground">
-            כל שינוי נרשם מקומית ומסונכרן כשהחיבור חוזר. המערכת עובדת במלואה גם ללא אינטרנט.
+            שרת סנכרון עדיין לא הוקם — זו החלטה מכוונת בשלב הזה, לא תקלה ולא עניין של חיבור
+            לאינטרנט. כל שינוי נרשם ביומן מקומי, וכשיוקם שרת, כל מה שהצטבר יסונכרן אליו. המערכת
+            עובדת במלואה, עם או בלי אינטרנט.
           </p>
         </CardContent>
       </Card>
