@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ContactInput, ListContactsInput, SearchInput } from '@yanuka/core';
-import type { Ulid } from '@yanuka/types';
+import type { RelationshipType, Ulid } from '@yanuka/types';
+import { NoteInputSchema, RelationshipInputSchema } from '@yanuka/validation';
 import { useRepository } from '../lib/repository';
 
 /** Query key namespaces, so a write can invalidate exactly what it affected. */
@@ -176,6 +177,65 @@ export function useDeleteContact() {
   const invalidate = useInvalidateContacts();
   return useMutation({
     mutationFn: (id: Ulid) => repository.deleteContact(id),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * Notes and relationships, written from the contact card.
+ *
+ * Inputs are parsed here, at the UI boundary, so both repositories receive the
+ * same validated shape — the in-memory mock in the browser and the SQLite
+ * layer through IPC — and a bad input fails with the schema's Hebrew message
+ * instead of reaching either backend.
+ */
+export function useAddNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (input: { contactId: Ulid; body: string }) =>
+      repository.addNote(NoteInputSchema.parse(input)),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: Ulid; body: string }) => repository.updateNote(id, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteNote() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.deleteNote(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCreateRelationship() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (input: {
+      fromContactId: Ulid;
+      toContactId: Ulid;
+      type: RelationshipType;
+      notes?: string;
+    }) => repository.createRelationship(RelationshipInputSchema.parse(input)),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteRelationship() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.deleteRelationship(id),
     onSuccess: invalidate,
   });
 }

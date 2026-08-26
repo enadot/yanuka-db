@@ -292,6 +292,37 @@ pub fn add_note(
     Ok(id)
 }
 
+/// Rewrite a note's body and reindex, so the edit is searchable immediately
+/// and the replaced wording stops matching.
+pub fn update_note(
+    connection: &mut Connection,
+    id: &str,
+    body: &str,
+    is_sensitive: Option<bool>,
+) -> Result<()> {
+    if body.trim().is_empty() {
+        return Err(DbError::Validation("יש להזין תוכן להערה".into()));
+    }
+
+    let contact_id: Option<String> = connection
+        .query_row("SELECT contact_id FROM notes WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+    let Some(contact_id) = contact_id else {
+        return Err(DbError::Validation("ההערה לא נמצאה".into()));
+    };
+
+    let tx = connection.transaction()?;
+    tx.execute(
+        "UPDATE notes SET body = ?2, is_sensitive = COALESCE(?3, is_sensitive),
+                          updated_at = ?4, version = version + 1
+          WHERE id = ?1",
+        params![id, body.trim(), is_sensitive.map(i64::from), now_iso()],
+    )?;
+    reindex_contact(&tx, &contact_id)?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn delete_note(connection: &mut Connection, id: &str) -> Result<()> {
     let contact_id: Option<String> = connection
         .query_row("SELECT contact_id FROM notes WHERE id = ?1", params![id], |row| row.get(0))

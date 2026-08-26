@@ -240,6 +240,59 @@ export function runRepositoryContractTests(
       expect(fromB?.relationships.some((edge) => edge.otherContact.id === a.id)).toBe(true);
     });
 
+    it('removes a deleted relationship from both sides', async () => {
+      const repo = await makeRepository();
+      const a = await repo.createContact({ ...blankContact, displayName: 'צד ראשון' });
+      const b = await repo.createContact({ ...blankContact, displayName: 'צד שני' });
+      const edge = await repo.createRelationship({
+        fromContactId: a.id,
+        toContactId: b.id,
+        type: 'knows',
+        notes: null,
+      });
+
+      await repo.deleteRelationship(edge.id);
+
+      expect((await repo.getContact(a.id))?.relationships).toHaveLength(0);
+      expect((await repo.getContact(b.id))?.relationships).toHaveLength(0);
+    });
+
+    it('a saved note is findable at once, and its old wording stops matching after an edit', async () => {
+      const searchInput = {
+        sort: 'relevance',
+        limit: 50,
+        offset: 0,
+        favoritesOnly: false,
+        includeDeleted: false,
+      } as const;
+      const hits = async (repo: ContactsRepository, text: string, id: string) => {
+        const results = await repo.search({ ...searchInput, text });
+        return results.results.some((result) => result.contact.id === id);
+      };
+
+      const repo = await makeRepository();
+      const created = await repo.createContact({ ...blankContact, displayName: 'בעל הערות' });
+
+      const note = await repo.addNote({
+        contactId: created.id,
+        body: 'פגשנו אותו בכנס באנטוורפן',
+        isSensitive: false,
+      });
+      const detail = await repo.getContact(created.id);
+      expect(detail?.contactNotes.map((candidate) => candidate.body)).toContain(
+        'פגשנו אותו בכנס באנטוורפן',
+      );
+      expect(await hits(repo, 'אנטוורפן', created.id)).toBe(true);
+
+      await repo.updateNote(note.id, 'עבר לגור בעיר צפת');
+      expect(await hits(repo, 'אנטוורפן', created.id)).toBe(false);
+      expect(await hits(repo, 'צפת', created.id)).toBe(true);
+
+      await repo.deleteNote(note.id);
+      expect(await hits(repo, 'צפת', created.id)).toBe(false);
+      expect((await repo.getContact(created.id))?.contactNotes).toHaveLength(0);
+    });
+
     it('finds duplicate pairs and merges without losing data', async () => {
       const repo = await makeRepository();
       const keep = await repo.createContact({

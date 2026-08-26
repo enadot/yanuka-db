@@ -359,17 +359,7 @@ pub fn update_note(
     is_sensitive: Option<bool>,
 ) -> Answer<Value> {
     state.with(|connection| {
-        connection.execute(
-            "UPDATE notes SET body = ?2, is_sensitive = COALESCE(?3, is_sensitive),
-                              updated_at = ?4, version = version + 1
-              WHERE id = ?1",
-            yanuka_db::rusqlite::params![
-                id,
-                body,
-                is_sensitive.map(i64::from),
-                yanuka_db::now_iso()
-            ],
-        )?;
+        taxonomy::update_note(connection, &id, &body, is_sensitive)?;
         Ok(serde_json::json!({ "id": id, "body": body }))
     })
 }

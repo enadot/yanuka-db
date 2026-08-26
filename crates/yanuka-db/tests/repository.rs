@@ -320,6 +320,36 @@ fn a_note_makes_a_contact_findable() {
 }
 
 #[test]
+fn an_edited_note_is_reindexed() {
+    let mut connection = db();
+    let created =
+        repository::create_contact(&mut connection, &contact("עורך הערות"), None).unwrap();
+    let note_id = taxonomy::add_note(
+        &mut connection,
+        &created.contact.id,
+        "פגשנו אותו בכנס באנטוורפן",
+        false,
+    )
+    .unwrap();
+
+    taxonomy::update_note(&mut connection, &note_id, "עבר לגור בעיר צפת", None).unwrap();
+
+    // The old wording must stop matching and the new one must start.
+    let stale =
+        search::search(&connection, &SearchQuery { text: "אנטוורפן".into(), ..Default::default() })
+            .unwrap();
+    assert_eq!(stale.total, 0);
+    let fresh =
+        search::search(&connection, &SearchQuery { text: "צפת".into(), ..Default::default() })
+            .unwrap();
+    assert_eq!(fresh.total, 1);
+
+    // A missing note and an emptied body are validation errors, not silent no-ops.
+    assert!(taxonomy::update_note(&mut connection, "01MISSING", "טקסט", None).is_err());
+    assert!(taxonomy::update_note(&mut connection, &note_id, "   ", None).is_err());
+}
+
+#[test]
 fn an_empty_query_browses_rather_than_failing() {
     let mut connection = db();
     repository::create_contact(&mut connection, &contact("מישהו"), None).unwrap();

@@ -302,3 +302,27 @@ The export walks the repository like any screen (no SQL side door), which is
 why the browser build exports identically via a Blob download. The desktop
 write path is a deliberately narrow command — `.csv` paths only — rather than
 a general file-write IPC: the webview is not a trust boundary.
+
+## ADR-029 — הערות וקשרים נכתבים מכרטיס איש הקשר
+
+The archive's value sits in free-text notes and in who-knows-whom edges, yet
+until now both were read-only in the UI — the only way in was CSV import or
+the single notes field on the contact form. That contradicted the product's
+core loop: the sentence the user writes today is how the person will be found
+in fifteen years.
+
+Notes: add, edit and delete live on the card itself. Every write goes through
+`taxonomy` and reindexes the contact in the same transaction, so a phrase is
+findable the moment it is saved — and stops matching once replaced. (The
+previous `update_note` IPC wrote SQL directly and skipped the reindex; it now
+routes through `taxonomy::update_note`, and a regression test pins that an
+edited note's old wording no longer matches.)
+
+Relationships: an edge is stored once, directed, and always written from the
+current card outward. The form's type labels complete the sentence
+"<this contact> <type> <other>", with a live preview spelling it out, so
+direction is never a guess; the far endpoint is picked through the same
+suggestion engine the global search uses. Deleting from either side removes
+the single stored edge everywhere — pinned by contract tests that run against
+both the mock and the SQLite implementations, and by an e2e that reads the
+same edge from both cards through the inverse labels.
