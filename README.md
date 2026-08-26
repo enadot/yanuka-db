@@ -116,6 +116,11 @@ The NSIS output lands in `target\release\bundle\nsis\`; CI copies it to
 "Windows protected your PC" on first run — *More info* → *Run anyway*. See
 `docs/DECISIONS.md` ADR-021.
 
+The installer's filename carries the product version, and the settings
+screen shows the same number — how versions are chosen and bumped is
+[`docs/VERSIONING.md`](docs/VERSIONING.md); what changed in each one is
+[`CHANGELOG.md`](CHANGELOG.md).
+
 ### Where the data lives
 
 `%APPDATA%\digital.baram.yanuka\contacts.db`. Deleting that file resets the

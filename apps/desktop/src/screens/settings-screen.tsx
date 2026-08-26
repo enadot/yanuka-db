@@ -225,6 +225,13 @@ export function SettingsScreen() {
           </div>
         </CardContent>
       </Card>
+
+      <p className="text-xs text-muted-foreground">
+        מאגר הקשרים · גרסה{' '}
+        <span className="numeric" data-testid="app-version">
+          {__APP_VERSION__}
+        </span>
+      </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 {
   "name": "yanuka-db",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline-first smart contacts database \u2014 desktop, web and mobile",
   "packageManager": "pnpm@10.33.0",
   "engines": {
