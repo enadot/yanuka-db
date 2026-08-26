@@ -228,6 +228,26 @@ pub fn find_duplicates(
     })
 }
 
+/// Whole-database duplicate scan for the dedup screen.
+#[tauri::command]
+pub fn list_duplicate_pairs(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Answer<Vec<yanuka_db::merge::DuplicatePair>> {
+    state
+        .with(|connection| yanuka_db::merge::list_duplicate_pairs(connection, limit.unwrap_or(100)))
+}
+
+/// Merge one contact into another without losing data. See yanuka_db::merge.
+#[tauri::command]
+pub fn merge_contacts(
+    state: State<'_, AppState>,
+    keep_id: String,
+    merge_id: String,
+) -> Answer<ContactWithRelations> {
+    state.with(|connection| yanuka_db::merge::merge_contacts(connection, &keep_id, &merge_id))
+}
+
 #[tauri::command]
 pub fn list_tags(state: State<'_, AppState>) -> Answer<Vec<Tag>> {
     state.with(|connection| taxonomy::list_tags(connection))
@@ -396,4 +416,40 @@ pub fn audit_log(
         })?;
         Ok(rows.collect::<yanuka_db::rusqlite::Result<Vec<_>>>()?)
     })
+}
+
+/// Snapshot the live database to a user-chosen destination (typically a USB
+/// stick), via SQLite's online-backup API — consistent even mid-write.
+#[tauri::command]
+pub fn backup_database(state: State<'_, AppState>, target_path: String) -> Answer<String> {
+    let target = std::path::PathBuf::from(&target_path);
+    state.with(|connection| yanuka_db::backup::backup_to(connection, &target))?;
+    Ok(target_path)
+}
+
+/// When the newest backup (daily or pre-migration) was taken, for settings.
+#[tauri::command]
+pub fn backup_status(state: State<'_, AppState>) -> Answer<Value> {
+    Ok(serde_json::json!({
+        "lastBackupAt": yanuka_db::backup::last_backup_at(state.database_path()),
+        "backupsDirectory": state
+            .database_path()
+            .parent()
+            .map(|parent| parent.join("backups").display().to_string()),
+    }))
+}
+
+/// Write an exported CSV where the user chose to save it.
+///
+/// Deliberately narrow — `.csv` only — rather than a general file-write IPC:
+/// the webview is not a trust boundary, and this command is the only file
+/// write it can request.
+#[tauri::command]
+pub fn save_exported_csv(path: String, contents: String) -> Answer<String> {
+    if !path.to_lowercase().ends_with(".csv") {
+        return Err(DbError::Validation("נתיב הייצוא חייב להסתיים ב־.csv".into()));
+    }
+    std::fs::write(&path, contents)
+        .map_err(|error| DbError::Validation(format!("שמירת הקובץ נכשלה: {error}")))?;
+    Ok(path)
 }

@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use rusqlite::Connection;
+use yanuka_db::rusqlite::Connection;
 use yanuka_db::{migrate, open};
 
 /// The open database, guarded for shared access across IPC calls.
@@ -12,6 +12,8 @@ use yanuka_db::{migrate, open};
 /// a profile.
 pub struct AppState {
     connection: Mutex<Connection>,
+    /// Where the database lives, for the backup commands.
+    database_path: std::path::PathBuf,
 }
 
 impl AppState {
@@ -24,7 +26,7 @@ impl AppState {
         if applied > 0 {
             eprintln!("applied {applied} migration(s)");
         }
-        Ok(Self { connection: Mutex::new(connection) })
+        Ok(Self { connection: Mutex::new(connection), database_path: path.to_path_buf() })
     }
 
     /// Run something against the database.
@@ -33,6 +35,10 @@ impl AppState {
     /// Recovering the guard is correct here: SQLite already rolled that
     /// transaction back, so the database is consistent, and refusing every
     /// subsequent request would strand the user's data behind a dead lock.
+    pub fn database_path(&self) -> &std::path::Path {
+        &self.database_path
+    }
+
     pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
         let mut guard = self.connection.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&mut guard)

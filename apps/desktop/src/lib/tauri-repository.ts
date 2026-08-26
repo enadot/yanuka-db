@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { toRepositoryError, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
+import { toRepositoryError, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type DuplicatePair, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
 import type {
   AuditLogEntry,
   Category,
@@ -117,6 +117,14 @@ export class TauriRepository implements ContactsRepository {
     return this.call('find_duplicates', { input, excludeId });
   }
 
+  listDuplicatePairs(limit = 100): Promise<DuplicatePair[]> {
+    return this.call('list_duplicate_pairs', { limit });
+  }
+
+  mergeContacts(keepId: Ulid, mergeId: Ulid): Promise<ContactWithRelations> {
+    return this.call('merge_contacts', { keepId, mergeId });
+  }
+
   listTags(): Promise<Tag[]> {
     return this.call('list_tags');
   }
@@ -205,6 +213,8 @@ export const IPC_COMMANDS = [
   'set_favorite',
   'touch_contact',
   'find_duplicates',
+  'list_duplicate_pairs',
+  'merge_contacts',
   'list_tags',
   'create_tag',
   'delete_tag',
@@ -220,5 +230,8 @@ export const IPC_COMMANDS = [
   'update_note',
   'delete_note',
   'database_stats',
+  'backup_database',
+  'backup_status',
+  'save_exported_csv',
   'audit_log',
 ] as const;

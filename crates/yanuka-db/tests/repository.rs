@@ -337,3 +337,240 @@ fn stats_report_the_pending_mutation_count() {
     assert_eq!(value["contacts"], 1);
     assert_eq!(value["sync"]["pendingMutations"], 1);
 }
+
+#[test]
+fn detail_includes_organizations_relationships_and_notes() {
+    // The desktop detail screen dereferences all three collections
+    // unconditionally, so a missing key is a blank page, not a cosmetic gap.
+    let mut connection = db();
+    let person =
+        repository::create_contact(&mut connection, &contact("ר' משה פרנקל"), None).unwrap();
+    let friend =
+        repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
+
+    taxonomy::create_relationship(
+        &connection,
+        &person.contact.id,
+        &friend.contact.id,
+        "knows",
+        None,
+    )
+    .unwrap();
+    taxonomy::add_note(&mut connection, &person.contact.id, "מכיר את כל הסופרים בעיר", false)
+        .unwrap();
+
+    let organization = taxonomy::create_organization(
+        &connection,
+        "חברה קדישא",
+        "community",
+        Some("ירושלים"),
+        Some("IL"),
+    )
+    .unwrap();
+    connection
+        .execute(
+            "INSERT INTO contact_organizations (id, contact_id, organization_id, role, is_primary,
+                                                created_at, updated_at, version)
+             VALUES ('01LINK', ?1, ?2, 'גבאי', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1)",
+            yanuka_db::rusqlite::params![person.contact.id, organization.id],
+        )
+        .unwrap();
+
+    let out = repository::get_contact(&connection, &person.contact.id).unwrap().unwrap();
+    assert_eq!(out.organizations.len(), 1);
+    assert_eq!(out.organizations[0].organization.name, "חברה קדישא");
+    assert_eq!(out.organizations[0].role.as_deref(), Some("גבאי"));
+    assert_eq!(out.contact_notes.len(), 1);
+    assert_eq!(out.contact_notes[0].body, "מכיר את כל הסופרים בעיר");
+    assert_eq!(out.relationships.len(), 1);
+    assert_eq!(out.relationships[0].direction, "out");
+    assert_eq!(out.relationships[0].other_contact.display_name, "יעקב טייטלבוים");
+
+    // The same edge, read from its far endpoint.
+    let seen_from_friend =
+        repository::get_contact(&connection, &friend.contact.id).unwrap().unwrap();
+    assert_eq!(seen_from_friend.relationships.len(), 1);
+    assert_eq!(seen_from_friend.relationships[0].direction, "in");
+    assert_eq!(seen_from_friend.relationships[0].other_contact.display_name, "ר' משה פרנקל");
+}
+
+#[test]
+fn detail_serializes_the_collections_even_when_empty() {
+    // This is the wire contract the webview relies on: `organizations`,
+    // `relationships` and `contactNotes` must exist as arrays on every
+    // response, because the screens call `.map` on them without guards.
+    let mut connection = db();
+    let created =
+        repository::create_contact(&mut connection, &contact("אישה בלי כלום"), None).unwrap();
+
+    let value = serde_json::to_value(&created).unwrap();
+    for key in ["organizations", "relationships", "contactNotes"] {
+        assert!(
+            value.get(key).is_some_and(|v| v.is_array()),
+            "expected `{key}` to serialize as an array, got: {:?}",
+            value.get(key)
+        );
+    }
+}
+
+#[test]
+fn duplicate_pairs_are_found_by_phone_email_and_name() {
+    let mut connection = db();
+    let mut first = contact("אברהם כהן");
+    first.phones =
+        vec![PhoneInput { raw: "054-5550134".into(), is_primary: true, ..Default::default() }];
+    let first = repository::create_contact(&mut connection, &first, None).unwrap();
+
+    let mut second = contact("אברהם הכהן");
+    // Same number in a different format — the digits still end identically.
+    second.phones =
+        vec![PhoneInput { raw: "+972545550134".into(), is_primary: true, ..Default::default() }];
+    let second = repository::create_contact(&mut connection, &second, None).unwrap();
+
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+
+    let pairs = yanuka_db::merge::list_duplicate_pairs(&connection, 50).unwrap();
+    assert_eq!(pairs.len(), 2);
+    // The phone pair outranks the name pair.
+    assert!(pairs[0].confidence > pairs[1].confidence);
+    assert_eq!(pairs[0].reasons, vec!["אותו מספר טלפון"]);
+    let ids = [pairs[0].first.id.clone(), pairs[0].second.id.clone()];
+    assert!(ids.contains(&first.contact.id) && ids.contains(&second.contact.id));
+    assert_eq!(pairs[1].reasons, vec!["שם זהה"]);
+}
+
+#[test]
+fn merge_preserves_every_field_and_moves_children() {
+    let mut connection = db();
+    let mut keep = contact("ר' משה פרנקל");
+    keep.city = Some("ירושלים".into());
+    keep.notes = Some("מכיר את כל הסופרים".into());
+    keep.phones =
+        vec![PhoneInput { raw: "02-6521234".into(), is_primary: true, ..Default::default() }];
+    let keep = repository::create_contact(&mut connection, &keep, None).unwrap();
+
+    let mut merge = contact("משה פרנקל");
+    merge.city = Some("בני ברק".into()); // conflicts with the kept city
+    merge.profession = Some("סופר סתם".into()); // fills a blank
+    merge.notes = Some("לחזור אליו אחרי החגים".into());
+    merge.phones = vec![
+        PhoneInput { raw: "02-6521234".into(), is_primary: true, ..Default::default() }, // duplicate
+        PhoneInput { raw: "054-5550199".into(), ..Default::default() },                  // new
+    ];
+    let merge = repository::create_contact(&mut connection, &merge, None).unwrap();
+    taxonomy::add_note(&mut connection, &merge.contact.id, "פגשתי אותו בכנס", false).unwrap();
+
+    let other =
+        repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
+    taxonomy::create_relationship(&connection, &merge.contact.id, &other.contact.id, "knows", None)
+        .unwrap();
+
+    let out =
+        yanuka_db::merge::merge_contacts(&mut connection, &keep.contact.id, &merge.contact.id)
+            .unwrap();
+
+    // Children: the duplicate phone was not doubled, the new one moved over.
+    let raws: Vec<&str> = out.phones.iter().map(|p| p.raw.as_str()).collect();
+    assert_eq!(raws.len(), 2);
+    assert!(raws.contains(&"02-6521234") && raws.contains(&"054-5550199"));
+    assert_eq!(out.phones.iter().filter(|p| p.is_primary).count(), 1);
+
+    // Scalars: blank filled, conflict preserved in the notes, notes appended.
+    assert_eq!(out.contact.profession.as_deref(), Some("סופר סתם"));
+    assert_eq!(out.contact.city.as_deref(), Some("ירושלים"));
+    let notes = out.contact.notes.clone().unwrap();
+    assert!(notes.contains("מכיר את כל הסופרים"));
+    assert!(notes.contains("בני ברק"));
+    assert!(notes.contains("לחזור אליו אחרי החגים"));
+
+    // The timestamped note and the relationship edge followed the merge.
+    assert_eq!(out.contact_notes.len(), 1);
+    assert_eq!(out.contact_notes[0].body, "פגשתי אותו בכנס");
+    assert_eq!(out.relationships.len(), 1);
+    assert_eq!(out.relationships[0].other_contact.display_name, "יעקב טייטלבוים");
+
+    // The merged contact is gone from live queries but recorded in the log.
+    assert!(repository::get_contact(&connection, &merge.contact.id)
+        .unwrap()
+        .unwrap()
+        .contact
+        .deleted_at
+        .is_some());
+    let logged: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM mutations WHERE entity_id = ?1 AND previous IS NOT NULL",
+            yanuka_db::rusqlite::params![merge.contact.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(logged, 1);
+
+    // And no pair remains to nag about.
+    assert!(yanuka_db::merge::list_duplicate_pairs(&connection, 50).unwrap().is_empty());
+}
+
+#[test]
+fn merge_refuses_self_and_missing() {
+    let mut connection = db();
+    let a = repository::create_contact(&mut connection, &contact("אברהם כהן"), None).unwrap();
+    assert!(
+        yanuka_db::merge::merge_contacts(&mut connection, &a.contact.id, &a.contact.id).is_err()
+    );
+    assert!(yanuka_db::merge::merge_contacts(&mut connection, &a.contact.id, "01MISSING").is_err());
+}
+
+#[test]
+fn backup_snapshots_a_live_database_and_rotates_dailies() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("contacts.db");
+    let mut connection = yanuka_db::open(&db_path, None).unwrap();
+    migrate(&mut connection).unwrap();
+    repository::create_contact(&mut connection, &contact("אברהם כהן"), None).unwrap();
+
+    // A same-day second call is a no-op; the snapshot itself must be a
+    // complete, openable database.
+    let taken = yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap();
+    let target = taken.expect("first daily backup should be taken");
+    assert!(yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap().is_none());
+
+    let restored = yanuka_db::open(&target, None).unwrap();
+    let count: i64 =
+        restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+    assert!(yanuka_db::backup::last_backup_at(&db_path).is_some());
+
+    // Rotation: plant older dailies and re-prune via a fresh backup dir scan.
+    let backups = db_path.parent().unwrap().join("backups");
+    for day in ["2020-01-01", "2020-01-02", "2020-01-03"] {
+        std::fs::write(backups.join(format!("daily-{day}.db")), b"x").unwrap();
+    }
+    // Force a new backup by removing today's, with keep=2.
+    std::fs::remove_file(&target).unwrap();
+    yanuka_db::backup::daily_backup(&connection, &db_path, 2).unwrap().unwrap();
+    let dailies: Vec<_> = std::fs::read_dir(&backups)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("daily-") && n.ends_with(".db"))
+        .collect();
+    assert_eq!(dailies.len(), 2);
+    assert!(!dailies.iter().any(|n| n.contains("2020-01-01")));
+}
+
+#[test]
+fn on_demand_backup_writes_to_an_arbitrary_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = dir.path().join("contacts.db");
+    let mut connection = yanuka_db::open(&db_path, None).unwrap();
+    migrate(&mut connection).unwrap();
+    repository::create_contact(&mut connection, &contact("יעקב פרידמן"), None).unwrap();
+
+    // Nested directory that does not exist yet — a fresh USB stick path.
+    let target = dir.path().join("usb").join("גיבוי-מאגר.db");
+    yanuka_db::backup::backup_to(&connection, &target).unwrap();
+    let restored = yanuka_db::open(&target, None).unwrap();
+    let count: i64 =
+        restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+}

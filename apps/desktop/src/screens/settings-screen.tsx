@@ -1,9 +1,11 @@
-import { Database, HardDrive, Info, Tags } from 'lucide-react';
+import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
   Alert,
   AlertDescription,
   AlertTitle,
+  Button,
   Card,
   CardContent,
   CardHeader,
@@ -11,7 +13,11 @@ import {
   Separator,
   TagPill,
 } from '@yanuka/ui';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
+import { backupNow, backupStatus, exportContactsCsv, type BackupStatus } from '../lib/desktop-io';
+import { useRepository } from '../lib/repository';
 import { useIsLocalDatabase } from '../lib/repository';
 
 /**
@@ -27,6 +33,42 @@ export function SettingsScreen() {
   const { data: tags = [] } = useTags();
   const { data: categories = [] } = useCategories();
   const isLocal = useIsLocalDatabase();
+  const repository = useRepository();
+  const [backup, setBackup] = useState<BackupStatus | null>(null);
+  const [busy, setBusy] = useState<'backup' | 'export' | null>(null);
+
+  useEffect(() => {
+    void backupStatus().then(setBackup);
+  }, []);
+
+  const runBackup = async () => {
+    setBusy('backup');
+    try {
+      const target = await backupNow();
+      if (target) {
+        toast.success(`הגיבוי נשמר: ${target}`);
+        setBackup(await backupStatus());
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'הגיבוי נכשל');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runExport = async () => {
+    setBusy('export');
+    try {
+      const target = await exportContactsCsv(repository);
+      if (target) {
+        toast.success(`הייצוא נשמר: ${target}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'הייצוא נכשל');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -82,6 +124,72 @@ export function SettingsScreen() {
           </div>
           <p className="pt-2 text-xs text-muted-foreground">
             כל שינוי נרשם מקומית ומסונכרן כשהחיבור חוזר. המערכת עובדת במלואה גם ללא אינטרנט.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FileUp className="size-4" aria-hidden />
+            ייבוא
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            ייבוא אנשי קשר מקובץ CSV, ואיתור כפילויות שנוצרו ממקורות שונים.
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <Button asChild variant="outline">
+              <Link to="/import">ייבוא מקובץ</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link to="/duplicates">איתור כפילויות</Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <DatabaseBackup className="size-4" aria-hidden />
+            גיבוי וייצוא
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLocal ? (
+            <p className="text-sm text-muted-foreground">
+              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים.
+              {' '}
+              גיבוי אחרון:{' '}
+              <span data-testid="last-backup">
+                {backup?.lastBackupAt ? formatDateTime(backup.lastBackupAt) : 'טרם נלקח'}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני.
+              ייצוא ה־CSV פועל גם כאן.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {isLocal ? (
+              <Button onClick={() => void runBackup()} disabled={busy !== null}>
+                {busy === 'backup' ? 'מגבה…' : 'גיבוי עכשיו…'}
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              onClick={() => void runExport()}
+              disabled={busy !== null}
+              data-testid="export-csv"
+            >
+              {busy === 'export' ? 'מייצא…' : 'ייצוא כל אנשי הקשר ל־CSV'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            קובץ הייצוא נפתח באקסל ומתייבא חזרה דרך מסך הייבוא ללא הגדרה נוספת.
           </p>
         </CardContent>
       </Card>

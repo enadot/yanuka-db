@@ -234,3 +234,71 @@ needed a native build that the container could not produce.
 Achievable for the query, and measured as such in Rust. Stating it end-to-end
 would fold in React render and IPC, which are a separate budget and a separate
 set of fixes. See SEARCH.md.
+
+## ADR-026 — CSV import: pure mapping logic behind the repository boundary
+
+The archive this product exists for lives in notebooks and old exports, so the
+first deferred item to land was CSV import. The split follows the codebase's
+one rule: parsing (`@yanuka/utils` csv.ts) and header-detection/row-mapping
+(`@yanuka/core` import.ts) are pure and unit-tested; the screen feeds the
+result to `ContactsRepository.createContact` row by row, so the flow is
+identical against the in-memory repository and SQLite, and the e2e suite
+exercises it without a Tauri shell.
+
+Import decisions all follow "מידע לא הולך לאיבוד": only a nameless row fails
+(and is reported, not silently skipped); phones import exactly as written; a
+malformed email becomes a notes line; every imported contact records its file
+name in `source`. Encoding is UTF-8 with a windows-1255 retry on damage —
+detection by decode failure, not heuristics. The parser is hand-rolled
+(RFC 4180 + BOM + bare-CR): a dependency would not cover the part that is
+actually hard here, which is the mapping.
+
+OCR import stays deferred: it needs a model or a service, and both collide
+with the offline constraint. The mapping layer is the contained seam it will
+slot into.
+
+## ADR-027 — Duplicate detection is whole-database; merge is lossless by rule
+
+Follows directly from CSV import (ADR-026): an archive assembled from several
+sources holds the same person more than once, and the moment to resolve that
+is after import, with both records visible — not at entry time, where the
+per-contact `find_duplicates` warning already exists.
+
+Detection (`yanuka-db::merge::list_duplicate_pairs`) pairs contacts by shared
+phone (last-7 digits), shared normalized email, or identical normalized name,
+strongest signal first. It only ever *suggests*: the screen shows the pair
+with its evidence and the user decides, including "אלו אנשים שונים".
+
+Merge (`merge_contacts`) is governed by priority 1, מידע לא הולך לאיבוד:
+children move to the kept contact (only exact value-duplicates are skipped —
+suffix-based dedupe could silently drop a genuinely different number sharing
+a local suffix); blank scalars fill from the merged side; conflicting scalars
+are preserved as labeled notes lines; relationship edges re-point; and the
+merged contact is soft-deleted with its complete prior state in the mutation
+log. The same semantics are implemented in MockRepository and pinned by the
+repository contract tests, so the browser build behaves like the desktop.
+
+## ADR-028 — Daily rotating backups and a round-tripping CSV export
+
+The archive exists as one SQLite file on one frequently-offline machine, with
+no sync and no cloud (ADR-019 deferred them). Until a server exists, backup
+*is* the durability story, so it cannot remain a manual habit.
+
+Three layers, all offline:
+- **Automatic**: one backup per calendar day, taken at launch via SQLite's
+  online-backup API (consistent while the database is open, WAL included),
+  named `daily-<date>.db` beside the pre-migration copies, seven kept. A
+  failed backup is reported and never blocks startup — the user's access to
+  their data outranks the safety net.
+- **On demand**: הגדרות ← "גיבוי עכשיו" snapshots to a user-chosen path,
+  typically a USB stick. Same API, arbitrary destination.
+- **Portable**: CSV export whose Hebrew headers are exactly what the import
+  auto-detection recognizes, so an exported file re-imports with the mapping
+  already correct — pinned by a round-trip test. The BOM is for Excel. What
+  CSV cannot carry (relationship edges, organization links, note metadata)
+  lives in the database backups; the CSV is the human-readable snapshot.
+
+The export walks the repository like any screen (no SQL side door), which is
+why the browser build exports identically via a Blob download. The desktop
+write path is a deliberately narrow command — `.csv` paths only — rather than
+a general file-write IPC: the webview is not a trust boundary.

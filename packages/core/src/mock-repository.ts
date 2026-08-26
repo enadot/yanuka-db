@@ -30,6 +30,7 @@ import type {
   ContactsRepository,
   DatabaseStats,
   DuplicateCandidate,
+  DuplicatePair,
   ListContactsInput,
   NoteInput,
   OrganizationInput,
@@ -520,6 +521,165 @@ export class MockRepository implements ContactsRepository {
       .filter((candidate): candidate is DuplicateCandidate => candidate != null)
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 5);
+  }
+
+  async listDuplicatePairs(limit = 100): Promise<DuplicatePair[]> {
+    await this.tick();
+    const live = this.live();
+    const pairs = new Map<string, DuplicatePair>();
+    const signal = (a: ContactWithRelations, b: ContactWithRelations, confidence: number, reason: string) => {
+      const [first, second] = a.id < b.id ? [a, b] : [b, a];
+      const key = `${first.id}:${second.id}`;
+      const existing = pairs.get(key);
+      if (existing) {
+        existing.confidence = Math.max(existing.confidence, confidence);
+        if (!existing.reasons.includes(reason)) existing.reasons.push(reason);
+      } else {
+        pairs.set(key, { first: toSummary(first), second: toSummary(second), confidence, reasons: [reason] });
+      }
+    };
+
+    for (let i = 0; i < live.length; i += 1) {
+      for (let j = i + 1; j < live.length; j += 1) {
+        const a = live[i]!;
+        const b = live[j]!;
+        const aDigits = a.phones.map((p) => p.digits).filter((d) => d.length >= 7);
+        const bDigits = new Set(b.phones.map((p) => p.digits).filter((d) => d.length >= 7).map((d) => d.slice(-7)));
+        if (aDigits.some((d) => bDigits.has(d.slice(-7)))) {
+          signal(a, b, 0.9, 'אותו מספר טלפון');
+        }
+        const aEmails = a.emails.map((e) => e.normalized).filter(Boolean);
+        const bEmails = new Set(b.emails.map((e) => e.normalized).filter(Boolean));
+        if (aEmails.some((e) => bEmails.has(e))) {
+          signal(a, b, 0.85, 'אותה כתובת אימייל');
+        }
+        if (normalizeName(a.displayName) !== '' && normalizeName(a.displayName) === normalizeName(b.displayName)) {
+          signal(a, b, 0.5, 'שם זהה');
+        }
+      }
+    }
+    return [...pairs.values()].sort((a, b) => b.confidence - a.confidence).slice(0, limit);
+  }
+
+  async mergeContacts(keepId: Ulid, mergeId: Ulid): Promise<ContactWithRelations> {
+    await this.tick();
+    if (keepId === mergeId) {
+      throw new RepositoryError('validation', 'לא ניתן למזג איש קשר עם עצמו');
+    }
+    const keep = this.contacts.find((c) => c.id === keepId && c.deletedAt == null);
+    const merge = this.contacts.find((c) => c.id === mergeId && c.deletedAt == null);
+    if (!keep || !merge) {
+      throw new RepositoryError('not_found', 'איש הקשר לא נמצא');
+    }
+    const now = nowIso();
+
+    // Blank scalars fill from the merged side; conflicts are preserved in notes.
+    const scalarFields = [
+      ['firstName', 'שם פרטי'],
+      ['lastName', 'שם משפחה'],
+      ['prefix', 'תואר'],
+      ['title', 'תואר אחרי השם'],
+      ['country', 'מדינה'],
+      ['region', 'אזור'],
+      ['city', 'עיר'],
+      ['address', 'כתובת'],
+      ['postalCode', 'מיקוד'],
+      ['profession', 'מקצוע'],
+      ['role', 'תפקיד'],
+      ['reasonForSaving', 'נשמר בגלל'],
+      ['source', 'מקור'],
+      ['introducedBy', 'הכיר בינינו'],
+    ] as const;
+    const extraNotes: string[] = [];
+    for (const [field, label] of scalarFields) {
+      const kept = keep[field];
+      const other = merge[field];
+      if (kept == null && other != null) {
+        (keep as Record<typeof field, string | null>)[field] = other;
+      } else if (kept != null && other != null && kept !== other) {
+        extraNotes.push(`${label}: ${other}`);
+      }
+    }
+    if (merge.notes && merge.notes.trim() !== '' && merge.notes !== keep.notes) {
+      extraNotes.push(merge.notes);
+    }
+    if (merge.isFavorite) keep.isFavorite = true;
+    if (extraNotes.length > 0) {
+      const separator = '\n';
+      const addition = `— מוזג מ״${merge.displayName}״ (${now}) —${separator}${extraNotes.join(separator)}`;
+      keep.notes =
+        keep.notes && keep.notes !== '' ? `${keep.notes}${separator}${separator}${addition}` : addition;
+    }
+
+    // Children move unless the kept side already holds the same value.
+    const keepPhoneDigits = new Set(keep.phones.map((p) => p.digits));
+    keep.phones.push(
+      ...merge.phones
+        .filter((p) => !keepPhoneDigits.has(p.digits))
+        .map((p) => ({ ...p, contactId: keep.id, isPrimary: keep.phones.length === 0 && p.isPrimary })),
+    );
+    const keepEmails = new Set(keep.emails.map((e) => e.normalized));
+    keep.emails.push(
+      ...merge.emails
+        .filter((e) => !keepEmails.has(e.normalized))
+        .map((e) => ({ ...e, contactId: keep.id, isPrimary: keep.emails.length === 0 && e.isPrimary })),
+    );
+    const keepAliases = new Set(keep.aliases.map((a) => a.normalized));
+    keep.aliases.push(
+      ...merge.aliases.filter((a) => !keepAliases.has(a.normalized)).map((a) => ({ ...a, contactId: keep.id })),
+    );
+    keep.specialties = [...new Set([...keep.specialties, ...merge.specialties])];
+    keep.languages = [...new Set([...keep.languages, ...merge.languages])];
+    const keepTagIds = new Set(keep.tags.map((t) => t.id));
+    keep.tags.push(...merge.tags.filter((t) => !keepTagIds.has(t.id)));
+    const keepCategoryIds = new Set(keep.categories.map((c) => c.id));
+    keep.categories.push(...merge.categories.filter((c) => !keepCategoryIds.has(c.id)));
+    const keepOrgIds = new Set(keep.organizations.map((o) => o.organizationId));
+    keep.organizations.push(
+      ...merge.organizations.filter((o) => !keepOrgIds.has(o.organizationId)).map((o) => ({ ...o, contactId: keep.id })),
+    );
+    keep.contactNotes.push(...merge.contactNotes.map((note) => ({ ...note, contactId: keep.id })));
+    merge.contactNotes = [];
+
+    // Edges re-point unless they would duplicate an existing one or point home.
+    for (const contact of this.contacts) {
+      const seen = new Set(
+        contact.relationships.map((edge) => `${edge.direction}:${edge.type}:${edge.otherContact.id}`),
+      );
+      contact.relationships = contact.relationships.flatMap((edge) => {
+        if (edge.otherContact.id !== mergeId) return [edge];
+        if (contact.id === keepId) return [];
+        const moved = { ...edge, otherContact: toSummary(keep) };
+        const key = `${moved.direction}:${moved.type}:${keepId}`;
+        if (seen.has(key)) return [];
+        seen.add(key);
+        return [moved];
+      });
+    }
+    const keepEdgeSeen = new Set(
+      keep.relationships.map((edge) => `${edge.direction}:${edge.type}:${edge.otherContact.id}`),
+    );
+    for (const edge of merge.relationships) {
+      if (edge.otherContact.id === keepId) continue;
+      const key = `${edge.direction}:${edge.type}:${edge.otherContact.id}`;
+      if (keepEdgeSeen.has(key)) continue;
+      keepEdgeSeen.add(key);
+      keep.relationships.push(edge);
+    }
+    merge.relationships = [];
+    for (const contact of this.contacts) {
+      if (contact.introducedByContactId === mergeId) {
+        contact.introducedByContactId = keepId;
+      }
+    }
+
+    merge.deletedAt = now;
+    merge.updatedAt = now;
+    merge.version += 1;
+    keep.updatedAt = now;
+    keep.version += 1;
+    this.pendingMutations += 2;
+    return keep;
   }
 
   // -- taxonomy ------------------------------------------------------------

@@ -44,6 +44,16 @@ packages/           types · validation · utils · search · database · core �
 docs/               architecture, database, search, sync, security, decisions
 ```
 
+## Importing an existing archive
+
+הגדרות ← ייבוא מקובץ. קבצי CSV מ־Google Contacts, מ־Outlook או מ־Excel; זיהוי
+הכותרות אוטומטי, המיפוי ניתן לתיקון לפני הכתיבה, ושורות שלא ניתן לייבא (ללא שם)
+מדווחות בסיכום במקום לעצור את השאר. ADR-026.
+
+אחרי ייבוא ממקורות שונים: הגדרות ← איתור כפילויות. הסריקה משווה טלפונים,
+אימיילים ושמות; מיזוג מעביר הכול לרשומה הנשמרת, משמר שדות סותרים בהערות,
+ורושם את הרשומה הממוזגת במלואה ביומן השינויים. ADR-027.
+
 ## Verification
 
 ```bash
@@ -108,8 +118,12 @@ The NSIS output lands in `target\release\bundle\nsis\`; CI copies it to
 
 ### Where the data lives
 
-`%APPDATA%\digital.baram.yanuka\contacts.db`, with pre-migration backups
-beside it in `backups\`. Deleting that file resets the application to empty.
+`%APPDATA%\digital.baram.yanuka\contacts.db`. Deleting that file resets the
+application to empty. Beside it in `backups\`: pre-migration copies (three
+kept) and automatic daily backups (`daily-*.db`, seven kept, taken on launch).
+הגדרות ← "גיבוי עכשיו" snapshots to any path — e.g. a USB stick — and
+"ייצוא CSV" writes a file that Excel opens and the import screen re-imports
+with the mapping already detected. ADR-028.
 
 ### No Rust installed?
 

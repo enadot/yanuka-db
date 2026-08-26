@@ -52,6 +52,16 @@ export interface DatabaseStats {
   sync: SyncState;
 }
 
+/** Two existing contacts that are likely the same person. */
+export interface DuplicatePair {
+  first: ContactSummary;
+  second: ContactSummary;
+  /** 0-1. The strongest single signal, not a sum. */
+  confidence: number;
+  /** Why the pair was flagged, e.g. `אותו מספר טלפון`. */
+  reasons: string[];
+}
+
 /** A contact that may already exist, surfaced before a duplicate is created. */
 export interface DuplicateCandidate {
   contact: ContactSummary;
@@ -122,6 +132,17 @@ export interface ContactsRepository {
   touchContact(id: Ulid): Promise<void>;
 
   findDuplicates(input: Partial<ContactInput>, excludeId?: Ulid): Promise<DuplicateCandidate[]>;
+
+  /** Scan the whole database for likely-duplicate pairs, strongest first. */
+  listDuplicatePairs(limit?: number): Promise<DuplicatePair[]>;
+
+  /**
+   * Merge `mergeId` into `keepId` without losing data: children move over
+   * (skipping value-duplicates), blank scalars fill from the merged contact,
+   * conflicting scalars are preserved in the notes, and the merged contact is
+   * soft-deleted with its full prior state in the mutation log.
+   */
+  mergeContacts(keepId: Ulid, mergeId: Ulid): Promise<ContactWithRelations>;
 
   // -- taxonomy ------------------------------------------------------------
 

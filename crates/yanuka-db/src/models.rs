@@ -202,6 +202,56 @@ pub struct ContactWithRelations {
     pub categories: Vec<Category>,
     pub specialties: Vec<String>,
     pub languages: Vec<String>,
+    pub organizations: Vec<ContactOrganizationLink>,
+    pub relationships: Vec<RelationshipEdge>,
+    pub contact_notes: Vec<Note>,
+}
+
+/// A membership row joined with the organization it points at.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactOrganizationLink {
+    pub id: Ulid,
+    pub contact_id: Ulid,
+    pub organization_id: Ulid,
+    pub role: Option<String>,
+    pub is_primary: bool,
+    pub started_at: Option<IsoDateTime>,
+    pub ended_at: Option<IsoDateTime>,
+    pub created_at: IsoDateTime,
+    pub organization: Organization,
+}
+
+/// A stored, directed relationship read from one of its endpoints.
+///
+/// `direction` says which endpoint this contact is; the frontend renders the
+/// inverse label (`RELATIONSHIP_INVERSES`) when reading an edge from its far
+/// end, which is what lets an edge be stored once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationshipEdge {
+    pub id: Ulid,
+    pub from_contact_id: Ulid,
+    pub to_contact_id: Ulid,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub notes: Option<String>,
+    pub created_at: IsoDateTime,
+    pub direction: String,
+    pub other_contact: ContactSummary,
+}
+
+/// A timestamped note, separate from `contacts.notes` (the always-visible remark).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    pub id: Ulid,
+    pub contact_id: Ulid,
+    pub body: String,
+    pub is_sensitive: bool,
+    pub author_id: Option<Ulid>,
+    pub created_at: IsoDateTime,
+    pub updated_at: IsoDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

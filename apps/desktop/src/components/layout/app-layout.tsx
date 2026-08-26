@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Database, Home, Plus, Search, Settings, Users } from 'lucide-react';
 import { Button, Separator, cn } from '@yanuka/ui';
 import { useCommandHotkey } from '../../hooks/use-hotkey';
 import { GlobalSearchDialog } from '../search/global-search-dialog';
+import { ScreenErrorBoundary } from './screen-error-boundary';
 import { SyncIndicator } from './sync-indicator';
 
 const NAV_ITEMS = [
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
 export function AppLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const openCommand = useCallback(() => setCommandOpen(true), []);
   useCommandHotkey('KeyK', openCommand);
@@ -85,7 +87,10 @@ export function AppLayout() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <Outlet />
+          {/* Keyed by path so navigating away from a crashed screen recovers. */}
+          <ScreenErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ScreenErrorBoundary>
         </main>
       </div>
 
