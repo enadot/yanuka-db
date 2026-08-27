@@ -1,13 +1,17 @@
 name: Release
 
-# Pushing a version tag (v0.2.0) builds the Windows installer and publishes a
-# GitHub Release with the .exe attached — the permanent, findable home for
-# installers, unlike CI artifacts which expire after 30 days. The full story:
-# docs/VERSIONING.md.
+# Publishes the Windows installer to a GitHub Release — the permanent,
+# findable home for installers, unlike CI artifacts which expire after 30
+# days. Two ways in, same result (docs/VERSIONING.md):
+#
+#   - push a version tag (v0.2.0), or
+#   - run this workflow manually from the Actions page; it then creates the
+#     tag itself from the declared version, at the chosen branch's head.
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -19,17 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # A tag that disagrees with the declared version would produce an
-      # installer whose filename lies about its contents. Refuse early.
-      - name: Verify the tag matches the declared version
+      # The single source of truth for the number is tauri.conf.json. A tag
+      # that disagrees with it would produce an installer whose filename lies
+      # about its contents — refuse early.
+      - name: Resolve and verify the version
+        id: version
         shell: bash
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           declared="$(node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json','utf8')).version")"
-          if [ "$tag" != "$declared" ]; then
-            echo "tag v$tag does not match tauri.conf.json version $declared" >&2
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$declared" ]; then
+            echo "tag $GITHUB_REF_NAME does not match tauri.conf.json version $declared" >&2
             exit 1
           fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -53,18 +59,22 @@ jobs:
             echo "no NSIS installer was produced" >&2
             exit 1
           fi
-          cp "$setup" "Contacts_${GITHUB_REF_NAME#v}_x64-setup.exe"
+          cp "$setup" "Contacts_${{ steps.version.outputs.version }}_x64-setup.exe"
 
       - name: Extract release notes from the changelog
         shell: bash
-        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+        run: node scripts/release-notes.mjs "${{ steps.version.outputs.version }}" > release-notes.md
 
+      # On a tag push the tag already exists and --target is ignored; on a
+      # manual run the release creates the tag at the built commit.
       - name: Publish the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "Contacts_${GITHUB_REF_NAME#v}_x64-setup.exe" \
-            --title "מאגר הקשרים ${GITHUB_REF_NAME#v}" \
+          gh release create "v$VERSION" \
+            "Contacts_${VERSION}_x64-setup.exe" \
+            --target "$GITHUB_SHA" \
+            --title "מאגר הקשרים $VERSION" \
             --notes-file release-notes.md
