@@ -376,3 +376,36 @@ relationships, tags, categories) do not journal yet. The card shows their
 current state but not their history — and the sync engine will need those
 entries anyway, so the fix belongs to that stage, once, rather than
 piecemeal here.
+
+## ADR-032 — היומן שלם: כל כתיבה נרשמת, והמראה נארז עם התוכנה
+
+Three closures in one stage, the first being the debt ADR-031 recorded.
+
+**Every write journals.** Notes, relationships, tags, categories and
+organizations now append to the mutation journal inside their own write
+transaction, through one `journal()` helper in taxonomy.rs — payload carries
+the changed fields (and the routing keys `contactId`/`fromContactId`/
+`toContactId`), `previous` carries what they replaced. A deleted note's body
+rides in `previous`, so the wording of a note deleted years ago is
+recoverable from the journal — priority 1, applied to the journal itself.
+The idempotent tag-reuse path journals nothing, and deleting an
+already-deleted edge journals nothing: only real changes replay.
+
+**The card history shows children.** `mutation::history` matches an entity's
+own id or any routing key in the payload, so one contact's history includes
+its notes and both endpoints of its edges. Linkage keys are filtered out of
+the rendered diff; entries are labeled (a note by its wording, truncated at
+60 chars by the same rule in both backends; a tag by its name). The mock
+mirrors all of it with a hidden `related` routing field, pinned by contract
+tests against both implementations.
+
+**Heebo is bundled, not fetched.** ADR-014 forbade *web* fonts — network at
+render time — which left the desktop on Segoe UI's dated Hebrew. Bundling
+Heebo (SIL OFL, the Hebrew face designed alongside Roboto) as two variable
+woff2 subsets in `public/fonts` (~42KB total, license included) keeps the
+never-online guarantee while making typography identical on every machine.
+The system stack remains as fallback.
+
+**The installer speaks the machine's language.** The NSIS language-selector
+dialog rendered with blank option labels on the target machine; it is gone.
+NSIS now picks Hebrew or English from the Windows locale directly.

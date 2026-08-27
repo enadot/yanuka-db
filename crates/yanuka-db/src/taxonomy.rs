@@ -4,13 +4,45 @@
 //! the contact record itself. Anything here that changes what a contact matches
 //! on reindexes the affected contact, in the same transaction as the write.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use serde_json::json;
 use yanuka_search::normalize_text;
 
 use crate::error::{DbError, Result};
 use crate::index::reindex_contact;
 use crate::models::*;
+use crate::mutation::{self, Operation};
+use crate::repository::device_id;
 use crate::{new_id, now_iso};
+
+/// Append this write to the sync journal, inside the caller's transaction.
+/// Every durable change goes through here: a write the journal misses is a
+/// write sync will never deliver, and one the card history cannot show
+/// (ADR-032).
+fn journal(
+    tx: &Transaction<'_>,
+    entity_type: &str,
+    entity_id: &str,
+    operation: Operation,
+    payload: Option<&serde_json::Value>,
+    previous: Option<&serde_json::Value>,
+    base_version: i64,
+) -> Result<()> {
+    let device = device_id(tx)?;
+    mutation::record(
+        tx,
+        mutation::NewMutation {
+            entity_type,
+            entity_id,
+            operation,
+            payload,
+            previous,
+            base_version,
+            device_id: &device,
+        },
+    )?;
+    Ok(())
+}
 
 pub fn list_tags(connection: &Connection) -> Result<Vec<Tag>> {
     let mut statement =
@@ -32,7 +64,7 @@ pub fn list_tags(connection: &Connection) -> Result<Vec<Tag>> {
 /// Idempotent on purpose: `סת"ם` and `סתם` are the same tag, and quietly
 /// reusing it is better than accumulating near-duplicates that split the facet
 /// counts and make the filter panel useless.
-pub fn create_tag(connection: &Connection, name: &str, color: Option<&str>) -> Result<Tag> {
+pub fn create_tag(connection: &mut Connection, name: &str, color: Option<&str>) -> Result<Tag> {
     let normalized = normalize_text(name);
     if normalized.is_empty() {
         return Err(DbError::Validation("יש להזין שם תגית".into()));
@@ -47,16 +79,28 @@ pub fn create_tag(connection: &Connection, name: &str, color: Option<&str>) -> R
         .optional()?;
 
     if let Some(id) = existing {
+        // Reused, not created — nothing changed, so nothing to journal.
         return get_tag(connection, &id);
     }
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO tags (id, name, normalized, color, created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, name.trim(), normalized, color, now],
     )?;
+    journal(
+        &tx,
+        "tag",
+        &id,
+        Operation::Create,
+        Some(&json!({ "name": name.trim(), "color": color })),
+        None,
+        0,
+    )?;
+    tx.commit()?;
     get_tag(connection, &id)
 }
 
@@ -82,10 +126,15 @@ pub fn delete_tag(connection: &mut Connection, id: &str) -> Result<()> {
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
+    let name: Option<String> = connection
+        .query_row("SELECT name FROM tags WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+
     let now = now_iso();
     let tx = connection.transaction()?;
     tx.execute("UPDATE tags SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
     tx.execute("UPDATE contact_tags SET deleted_at = ?2 WHERE tag_id = ?1", params![id, now])?;
+    journal(&tx, "tag", id, Operation::Delete, None, Some(&json!({ "name": name })), 0)?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
     }
@@ -109,7 +158,7 @@ pub fn list_categories(connection: &Connection) -> Result<Vec<Category>> {
 }
 
 pub fn create_category(
-    connection: &Connection,
+    connection: &mut Connection,
     name: &str,
     description: Option<&str>,
 ) -> Result<Category> {
@@ -120,11 +169,22 @@ pub fn create_category(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO categories (id, name, normalized, description, created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, name.trim(), normalized, description, now],
     )?;
+    journal(
+        &tx,
+        "category",
+        &id,
+        Operation::Create,
+        Some(&json!({ "name": name.trim(), "description": description })),
+        None,
+        0,
+    )?;
+    tx.commit()?;
 
     Ok(connection.query_row("SELECT * FROM categories WHERE id = ?1", params![id], |row| {
         Ok(Category {
@@ -146,6 +206,10 @@ pub fn delete_category(connection: &mut Connection, id: &str) -> Result<()> {
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
+    let name: Option<String> = connection
+        .query_row("SELECT name FROM categories WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+
     let now = now_iso();
     let tx = connection.transaction()?;
     tx.execute("UPDATE categories SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
@@ -153,6 +217,7 @@ pub fn delete_category(connection: &mut Connection, id: &str) -> Result<()> {
         "UPDATE contact_categories SET deleted_at = ?2 WHERE category_id = ?1",
         params![id, now],
     )?;
+    journal(&tx, "category", id, Operation::Delete, None, Some(&json!({ "name": name })), 0)?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
     }
@@ -188,7 +253,7 @@ pub fn list_organizations(
 }
 
 pub fn create_organization(
-    connection: &Connection,
+    connection: &mut Connection,
     name: &str,
     kind: &str,
     city: Option<&str>,
@@ -201,12 +266,23 @@ pub fn create_organization(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO organizations (id, name, normalized, kind, city, country,
                                     created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 1)",
         params![id, name.trim(), normalized, kind, city, country, now],
     )?;
+    journal(
+        &tx,
+        "organization",
+        &id,
+        Operation::Create,
+        Some(&json!({ "name": name.trim(), "kind": kind, "city": city, "country": country })),
+        None,
+        0,
+    )?;
+    tx.commit()?;
 
     list_organizations(connection, Some(name), 1)?
         .into_iter()
@@ -223,6 +299,10 @@ pub fn delete_organization(connection: &mut Connection, id: &str) -> Result<()> 
         rows.collect::<rusqlite::Result<Vec<_>>>()?
     };
 
+    let name: Option<String> = connection
+        .query_row("SELECT name FROM organizations WHERE id = ?1", params![id], |row| row.get(0))
+        .optional()?;
+
     let now = now_iso();
     let tx = connection.transaction()?;
     tx.execute("UPDATE organizations SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
@@ -230,6 +310,7 @@ pub fn delete_organization(connection: &mut Connection, id: &str) -> Result<()> 
         "UPDATE contact_organizations SET deleted_at = ?2 WHERE organization_id = ?1",
         params![id, now],
     )?;
+    journal(&tx, "organization", id, Operation::Delete, None, Some(&json!({ "name": name })), 0)?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
     }
@@ -239,7 +320,7 @@ pub fn delete_organization(connection: &mut Connection, id: &str) -> Result<()> 
 
 /// Create a directed relationship between two contacts.
 pub fn create_relationship(
-    connection: &Connection,
+    connection: &mut Connection,
     from_id: &str,
     to_id: &str,
     kind: &str,
@@ -251,20 +332,60 @@ pub fn create_relationship(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO relationships (id, from_contact_id, to_contact_id, type, notes,
                                     created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 1)",
         params![id, from_id, to_id, kind, notes, now],
     )?;
+    // Both endpoint ids ride in the payload so the card history of either
+    // contact finds this entry (see mutation::history).
+    journal(
+        &tx,
+        "relationship",
+        &id,
+        Operation::Create,
+        Some(&json!({
+            "fromContactId": from_id,
+            "toContactId": to_id,
+            "type": kind,
+            "notes": notes,
+        })),
+        None,
+        0,
+    )?;
+    tx.commit()?;
     Ok(id)
 }
 
-pub fn delete_relationship(connection: &Connection, id: &str) -> Result<()> {
-    connection.execute(
-        "UPDATE relationships SET deleted_at = ?2 WHERE id = ?1",
-        params![id, now_iso()],
+pub fn delete_relationship(connection: &mut Connection, id: &str) -> Result<()> {
+    let edge: Option<(String, String, String, i64)> = connection
+        .query_row(
+            "SELECT from_contact_id, to_contact_id, type, version FROM relationships
+              WHERE id = ?1 AND deleted_at IS NULL",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()?;
+    // Deleting an edge that is already gone changes nothing — and journaling
+    // a no-op would replay nothing when sync arrives.
+    let Some((from_id, to_id, kind, version)) = edge else {
+        return Ok(());
+    };
+
+    let tx = connection.transaction()?;
+    tx.execute("UPDATE relationships SET deleted_at = ?2 WHERE id = ?1", params![id, now_iso()])?;
+    journal(
+        &tx,
+        "relationship",
+        id,
+        Operation::Delete,
+        Some(&json!({ "fromContactId": from_id, "toContactId": to_id })),
+        Some(&json!({ "type": kind })),
+        version,
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -287,6 +408,19 @@ pub fn add_note(
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, contact_id, body.trim(), i64::from(is_sensitive), now],
     )?;
+    journal(
+        &tx,
+        "note",
+        &id,
+        Operation::Create,
+        Some(&json!({
+            "contactId": contact_id,
+            "body": body.trim(),
+            "isSensitive": is_sensitive,
+        })),
+        None,
+        0,
+    )?;
     reindex_contact(&tx, contact_id)?;
     tx.commit()?;
     Ok(id)
@@ -304,10 +438,14 @@ pub fn update_note(
         return Err(DbError::Validation("יש להזין תוכן להערה".into()));
     }
 
-    let contact_id: Option<String> = connection
-        .query_row("SELECT contact_id FROM notes WHERE id = ?1", params![id], |row| row.get(0))
+    let before: Option<(String, String, i64)> = connection
+        .query_row(
+            "SELECT contact_id, body, version FROM notes WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
         .optional()?;
-    let Some(contact_id) = contact_id else {
+    let Some((contact_id, old_body, version)) = before else {
         return Err(DbError::Validation("ההערה לא נמצאה".into()));
     };
 
@@ -318,19 +456,43 @@ pub fn update_note(
           WHERE id = ?1",
         params![id, body.trim(), is_sensitive.map(i64::from), now_iso()],
     )?;
+    journal(
+        &tx,
+        "note",
+        id,
+        Operation::Update,
+        Some(&json!({ "contactId": contact_id, "body": body.trim() })),
+        Some(&json!({ "body": old_body })),
+        version,
+    )?;
     reindex_contact(&tx, &contact_id)?;
     tx.commit()?;
     Ok(())
 }
 
 pub fn delete_note(connection: &mut Connection, id: &str) -> Result<()> {
-    let contact_id: Option<String> = connection
-        .query_row("SELECT contact_id FROM notes WHERE id = ?1", params![id], |row| row.get(0))
+    let before: Option<(String, String, i64)> = connection
+        .query_row(
+            "SELECT contact_id, body, version FROM notes WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
         .optional()?;
 
     let tx = connection.transaction()?;
     tx.execute("UPDATE notes SET deleted_at = ?2 WHERE id = ?1", params![id, now_iso()])?;
-    if let Some(contact_id) = contact_id {
+    if let Some((contact_id, old_body, version)) = before {
+        // The body rides in `previous`: a deleted note stays readable from
+        // the journal, which is what priority 1 means here.
+        journal(
+            &tx,
+            "note",
+            id,
+            Operation::Delete,
+            Some(&json!({ "contactId": contact_id })),
+            Some(&json!({ "body": old_body })),
+            version,
+        )?;
         reindex_contact(&tx, &contact_id)?;
     }
     tx.commit()?;

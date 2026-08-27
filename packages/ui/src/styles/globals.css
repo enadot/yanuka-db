@@ -121,13 +121,14 @@
    * Font stack.
    *
    * No web fonts and no CDN: the application must start and render correctly
-   * on a machine that has never been online. These are the faces that ship
-   * with Windows and macOS and cover Hebrew well. Segoe UI leads because the
-   * primary target is Windows. See docs/DECISIONS.md ADR-014.
+   * on a machine that has never been online. Heebo leads because the desktop
+   * app bundles it locally (apps/desktop/public/fonts, ADR-032); everything
+   * after it is the system-font fallback that ADR-014 chose, and is what a
+   * host without the bundled files still renders correctly with.
    */
   --font-sans:
-    'Segoe UI', 'Noto Sans Hebrew', 'Arial Hebrew', 'Alef', 'Rubik', system-ui, -apple-system,
-    'Helvetica Neue', Arial, sans-serif;
+    'Heebo', 'Segoe UI', 'Noto Sans Hebrew', 'Arial Hebrew', 'Alef', 'Rubik', system-ui,
+    -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --font-display: 'Frank Ruehl CLM', 'David Libre', 'Times New Roman', Georgia, serif;
   --font-mono: 'Cascadia Mono', 'Consolas', 'SF Mono', 'Menlo', monospace;
 }

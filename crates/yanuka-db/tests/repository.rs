@@ -270,7 +270,7 @@ fn keyset_pagination_neither_repeats_nor_skips() {
 #[test]
 fn reindexes_when_a_tag_is_attached() {
     let mut connection = db();
-    let tag = taxonomy::create_tag(&connection, "סת\"ם", None).unwrap();
+    let tag = taxonomy::create_tag(&mut connection, "סת\"ם", None).unwrap();
 
     let mut input = contact("בעל תגית");
     input.tag_ids = vec![tag.id.clone()];
@@ -286,9 +286,9 @@ fn reindexes_when_a_tag_is_attached() {
 fn creating_a_tag_twice_returns_the_same_row() {
     // `סת"ם` and `סתם` normalize alike; splitting them would fragment the facet
     // counts and make the filter panel misleading.
-    let connection = db();
-    let first = taxonomy::create_tag(&connection, "סת\"ם", None).unwrap();
-    let second = taxonomy::create_tag(&connection, "סתם", None).unwrap();
+    let mut connection = db();
+    let first = taxonomy::create_tag(&mut connection, "סת\"ם", None).unwrap();
+    let second = taxonomy::create_tag(&mut connection, "סתם", None).unwrap();
     assert_eq!(first.id, second.id);
 }
 
@@ -297,7 +297,7 @@ fn refuses_to_link_a_contact_to_itself() {
     let mut connection = db();
     let created = repository::create_contact(&mut connection, &contact("יחיד"), None).unwrap();
     let result = taxonomy::create_relationship(
-        &connection,
+        &mut connection,
         &created.contact.id,
         &created.contact.id,
         "knows",
@@ -379,7 +379,7 @@ fn detail_includes_organizations_relationships_and_notes() {
         repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
 
     taxonomy::create_relationship(
-        &connection,
+        &mut connection,
         &person.contact.id,
         &friend.contact.id,
         "knows",
@@ -390,7 +390,7 @@ fn detail_includes_organizations_relationships_and_notes() {
         .unwrap();
 
     let organization = taxonomy::create_organization(
-        &connection,
+        &mut connection,
         "חברה קדישא",
         "community",
         Some("ירושלים"),
@@ -493,8 +493,14 @@ fn merge_preserves_every_field_and_moves_children() {
 
     let other =
         repository::create_contact(&mut connection, &contact("יעקב טייטלבוים"), None).unwrap();
-    taxonomy::create_relationship(&connection, &merge.contact.id, &other.contact.id, "knows", None)
-        .unwrap();
+    taxonomy::create_relationship(
+        &mut connection,
+        &merge.contact.id,
+        &other.contact.id,
+        "knows",
+        None,
+    )
+    .unwrap();
 
     let out =
         yanuka_db::merge::merge_contacts(&mut connection, &keep.contact.id, &merge.contact.id)
@@ -652,4 +658,64 @@ fn history_remembers_what_changed_and_what_it_was_before() {
     // A field that did not change does not clutter the entry.
     assert!(update["changes"].get("displayName").is_none());
     assert_eq!(update["entityLabel"], "זכריה הזכור");
+}
+
+#[test]
+fn note_edits_are_on_the_record_with_the_wording_they_replaced() {
+    let mut connection = db();
+    let created = repository::create_contact(&mut connection, &contact("נתן הרושם"), None).unwrap();
+    let contact_id = created.contact.id.clone();
+
+    let note_id =
+        taxonomy::add_note(&mut connection, &contact_id, "ביקר בבני ברק אצל הרב", false).unwrap();
+    taxonomy::update_note(&mut connection, &note_id, "עבר לגור בירושלים", None).unwrap();
+    taxonomy::delete_note(&mut connection, &note_id).unwrap();
+
+    let history = mutation::history(&connection, Some(&contact_id), 50).unwrap();
+    let notes: Vec<&serde_json::Value> =
+        history.iter().filter(|entry| entry["entityType"] == "note").collect();
+    let actions: Vec<&str> = notes.iter().map(|entry| entry["action"].as_str().unwrap()).collect();
+    assert_eq!(actions, vec!["delete", "update", "create"]);
+
+    assert_eq!(notes[1]["changes"]["body"]["from"], "ביקר בבני ברק אצל הרב");
+    assert_eq!(notes[1]["changes"]["body"]["to"], "עבר לגור בירושלים");
+    // Labeled with the note's wording, so a deleted note stays readable.
+    assert!(notes[0]["entityLabel"].as_str().unwrap().contains("עבר לגור בירושלים"));
+    // The routing key is not rendered as an edit.
+    assert!(notes[1]["changes"].get("contactId").is_none());
+}
+
+#[test]
+fn a_relationship_appears_in_the_history_of_both_endpoints() {
+    let mut connection = db();
+    let a = repository::create_contact(&mut connection, &contact("איתן הראשון"), None).unwrap();
+    let b = repository::create_contact(&mut connection, &contact("בועז השני"), None).unwrap();
+
+    let edge_id = taxonomy::create_relationship(
+        &mut connection,
+        &a.contact.id,
+        &b.contact.id,
+        "recommended",
+        None,
+    )
+    .unwrap();
+    taxonomy::delete_relationship(&mut connection, &edge_id).unwrap();
+
+    for id in [&a.contact.id, &b.contact.id] {
+        let actions: Vec<String> = mutation::history(&connection, Some(id), 50)
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry["entityType"] == "relationship")
+            .map(|entry| entry["action"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(actions, vec!["delete", "create"], "endpoint {id}");
+    }
+
+    // Deleting an already-deleted edge journals nothing.
+    let before: i64 =
+        connection.query_row("SELECT COUNT(*) FROM mutations", [], |row| row.get(0)).unwrap();
+    taxonomy::delete_relationship(&mut connection, &edge_id).unwrap();
+    let after: i64 =
+        connection.query_row("SELECT COUNT(*) FROM mutations", [], |row| row.get(0)).unwrap();
+    assert_eq!(before, after);
 }

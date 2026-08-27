@@ -105,6 +105,18 @@ pub fn diff(previous: &Value, next: &Value) -> Value {
     Value::Object(changed)
 }
 
+/// First words of a text, for labeling a journal entry — enough to recognize
+/// the note, short enough for one line on the card.
+fn snippet(text: &str) -> String {
+    const LIMIT: usize = 60;
+    if text.chars().count() <= LIMIT {
+        text.to_string()
+    } else {
+        let cut: String = text.chars().take(LIMIT).collect();
+        format!("{}…", cut.trim_end())
+    }
+}
+
 /// Render the mutation log as history entries for the UI — who did what, when,
 /// with field-level before/after reconstructed from `payload` × `previous`.
 /// Derived data only: the log itself is the sync journal and is never
@@ -114,7 +126,13 @@ pub fn history(connection: &Connection, entity_id: Option<&str>, limit: i64) -> 
         "SELECT m.id, m.entity_type, m.entity_id, m.operation, m.payload, m.previous,
                 m.created_at, m.device_id
            FROM mutations m
-          WHERE (?1 IS NULL OR m.entity_id = ?1)
+          WHERE (
+                  ?1 IS NULL
+                  OR m.entity_id = ?1
+                  OR json_extract(m.payload, '$.contactId') = ?1
+                  OR json_extract(m.payload, '$.fromContactId') = ?1
+                  OR json_extract(m.payload, '$.toContactId') = ?1
+                )
           ORDER BY m.created_at DESC, m.id DESC LIMIT ?2",
     )?;
     type Row = (String, String, String, String, Option<String>, Option<String>, String, String);
@@ -175,6 +193,9 @@ pub fn history(connection: &Connection, entity_id: Option<&str>, limit: i64) -> 
                     let before = previous.as_ref().and_then(Value::as_object);
                     let map: serde_json::Map<String, Value> = object
                         .iter()
+                        .filter(|(key, _)| {
+                            !matches!(key.as_str(), "contactId" | "fromContactId" | "toContactId")
+                        })
                         .map(|(key, to)| {
                             let from = before
                                 .and_then(|inner| inner.get(key))
@@ -190,17 +211,38 @@ pub fn history(connection: &Connection, entity_id: Option<&str>, limit: i64) -> 
             Value::Null
         };
 
-        // The label makes an entry readable outside the card it belongs to.
-        let label: Option<String> = if entity_type == "contact" {
-            connection
+        // The label makes an entry readable on the card: a note entry shows
+        // the note's wording, a tag entry its name. Soft-deleted rows still
+        // hold these values, which is exactly why they can appear here.
+        let label: Option<String> = match entity_type.as_str() {
+            "contact" => connection
                 .query_row(
                     "SELECT display_name FROM contacts WHERE id = ?1",
                     params![entity_id],
                     |row| row.get(0),
                 )
+                .optional()?,
+            "note" => connection
+                .query_row("SELECT body FROM notes WHERE id = ?1", params![entity_id], |row| {
+                    row.get(0)
+                })
                 .optional()?
-        } else {
-            None
+                .map(|body: String| snippet(&body)),
+            "tag" | "category" | "organization" => {
+                let table = match entity_type.as_str() {
+                    "tag" => "tags",
+                    "category" => "categories",
+                    _ => "organizations",
+                };
+                connection
+                    .query_row(
+                        &format!("SELECT name FROM {table} WHERE id = ?1"),
+                        params![entity_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+            }
+            _ => None,
         };
 
         entries.push(json!({

@@ -37,10 +37,19 @@ test('a note added on the card finds the contact by its phrase, then edits and d
   const edited = page.getByTestId('contact-note').filter({ hasText: 'עבר לגור בהמבורג' });
   await expect(edited).toBeVisible();
 
-  // Delete it, and it is gone from the card.
+  // The edit is on the record: the history names the note and carries the
+  // wording it replaced.
+  const historyUpdate = page.getByTestId('history-entry').filter({ hasText: 'הערה נערכה' });
+  await expect(historyUpdate).toContainText('עבר לגור בהמבורג');
+  await expect(historyUpdate).toContainText('בוועידה בהלסינקי');
+
+  // Delete it, and it is gone from the card — but not from the record.
   await edited.getByRole('button', { name: 'מחיקת הערה' }).click();
   await page.getByTestId('confirm-delete-note').click();
   await expect(edited).toHaveCount(0);
+  await expect(
+    page.getByTestId('history-entry').filter({ hasText: 'הערה נמחקה' }),
+  ).toBeVisible();
 });
 
 test('a relationship recorded on one card reads correctly from both sides and can be removed', async ({

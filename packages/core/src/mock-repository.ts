@@ -54,6 +54,17 @@ import type {
  * pass `runRepositoryContractTests`.
  */
 /**
+ * First words of a text, for labeling a journal entry — the same 60-character
+ * rule as the SQLite side (mutation.rs snippet()), so both backends label
+ * identically.
+ */
+function snippet(text: string): string {
+  const LIMIT = 60;
+  if ([...text].length <= LIMIT) return text;
+  return `${[...text].slice(0, LIMIT).join('').trimEnd()}…`;
+}
+
+/**
  * The scalar fields whose edits the history remembers, mirroring the diff the
  * SQLite journal records in `update_contact`. Children (phones, tags…) are
  * journaled as part of the record rewrite, not field-by-field.
@@ -83,7 +94,7 @@ export class MockRepository implements ContactsRepository {
   private categories: Category[];
   private organizations: Organization[];
   private relationships: Relationship[];
-  private audit: AuditLogEntry[] = [];
+  private audit: Array<AuditLogEntry & { related?: Ulid[] }> = [];
   private pendingMutations = 0;
 
   /** Artificial latency so loading and empty states are exercised in the UI. */
@@ -179,6 +190,36 @@ export class MockRepository implements ContactsRepository {
       deviceId: 'browser',
       deviceName: 'דפדפן',
       createdAt: nowIso(),
+    });
+    this.pendingMutations += 1;
+  }
+
+  /**
+   * A journal entry for a child record (note, relationship). `related` routes
+   * the entry to the cards it belongs to — the SQLite journal does the same
+   * through contactId keys in the payload (see mutation::history).
+   */
+  private recordChild(
+    action: AuditLogEntry['action'],
+    entityType: string,
+    entityId: Ulid,
+    entityLabel: string | null,
+    related: Ulid[],
+    changes: AuditLogEntry['changes'] = null,
+  ): void {
+    this.audit.unshift({
+      id: newId(),
+      userId: null,
+      userDisplayName: null,
+      action,
+      entityType,
+      entityId,
+      entityLabel,
+      changes,
+      deviceId: 'browser',
+      deviceName: 'דפדפן',
+      createdAt: nowIso(),
+      related,
     });
     this.pendingMutations += 1;
   }
@@ -882,11 +923,19 @@ export class MockRepository implements ContactsRepository {
     // Materialize both directions so either detail screen can render the edge.
     from.relationships.push({ ...relationship, otherContact: toSummary(to), direction: 'out' });
     to.relationships.push({ ...relationship, otherContact: toSummary(from), direction: 'in' });
+    this.recordChild('create', 'relationship', relationship.id, null, [from.id, to.id]);
     return relationship;
   }
 
   async deleteRelationship(id: Ulid): Promise<void> {
     await this.tick();
+    const edge = this.relationships.find((relationship) => relationship.id === id);
+    if (edge) {
+      this.recordChild('delete', 'relationship', edge.id, null, [
+        edge.fromContactId,
+        edge.toContactId,
+      ]);
+    }
     this.relationships = this.relationships.filter((relationship) => relationship.id !== id);
     for (const contact of this.contacts) {
       contact.relationships = contact.relationships.filter(
@@ -916,6 +965,7 @@ export class MockRepository implements ContactsRepository {
       authorId: null,
     };
     contact.contactNotes.unshift(note);
+    this.recordChild('create', 'note', note.id, snippet(note.body), [contact.id]);
     return note;
   }
 
@@ -924,10 +974,14 @@ export class MockRepository implements ContactsRepository {
     for (const contact of this.contacts) {
       const note = contact.contactNotes.find((candidate) => candidate.id === id);
       if (note) {
+        const previous = note.body;
         note.body = body;
         if (isSensitive != null) note.isSensitive = isSensitive;
         note.updatedAt = nowIso();
         note.version += 1;
+        this.recordChild('update', 'note', note.id, snippet(note.body), [contact.id], {
+          body: { from: previous, to: note.body },
+        });
         return note;
       }
     }
@@ -937,7 +991,11 @@ export class MockRepository implements ContactsRepository {
   async deleteNote(id: Ulid): Promise<void> {
     await this.tick();
     for (const contact of this.contacts) {
-      contact.contactNotes = contact.contactNotes.filter((note) => note.id !== id);
+      const note = contact.contactNotes.find((candidate) => candidate.id === id);
+      if (note) {
+        this.recordChild('delete', 'note', note.id, snippet(note.body), [contact.id]);
+      }
+      contact.contactNotes = contact.contactNotes.filter((candidate) => candidate.id !== id);
     }
   }
 
@@ -965,8 +1023,10 @@ export class MockRepository implements ContactsRepository {
   async auditLog(entityId?: Ulid, limit = 50): Promise<AuditLogEntry[]> {
     await this.tick();
     const rows = entityId
-      ? this.audit.filter((entry) => entry.entityId === entityId)
+      ? this.audit.filter(
+          (entry) => entry.entityId === entityId || entry.related?.includes(entityId),
+        )
       : this.audit;
-    return rows.slice(0, limit);
+    return rows.slice(0, limit).map(({ related: _related, ...entry }) => entry);
   }
 }

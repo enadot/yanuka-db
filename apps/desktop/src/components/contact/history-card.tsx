@@ -32,6 +32,7 @@ const FIELD_LABELS: Record<string, string> = {
   reasonForSaving: 'נשמר בגלל',
   source: 'מקור',
   introducedBy: 'מי הכיר',
+  body: 'הערה',
 };
 
 const ACTION_LABELS: Record<AuditLogEntry['action'], string> = {
@@ -47,9 +48,28 @@ const ACTION_LABELS: Record<AuditLogEntry['action'], string> = {
   sync: 'סנכרון',
 };
 
+/**
+ * Child entries read as their own sentences — "נוספה הערה", not "הרשומה
+ * נוצרה" — because on this card the record is the person, and the note or
+ * the edge is the thing that happened to them.
+ */
+const CHILD_ACTION_LABELS: Record<string, Partial<Record<AuditLogEntry['action'], string>>> = {
+  note: { create: 'נוספה הערה', update: 'הערה נערכה', delete: 'הערה נמחקה' },
+  relationship: { create: 'נרשם קשר', delete: 'קשר הוסר' },
+};
+
+function verbFor(entry: AuditLogEntry): string {
+  return (
+    CHILD_ACTION_LABELS[entry.entityType]?.[entry.action] ??
+    ACTION_LABELS[entry.action] ??
+    entry.action
+  );
+}
+
 function asText(value: unknown): string {
   if (value === null || value === undefined || value === '') return 'ריק';
-  return String(value);
+  const text = String(value);
+  return [...text].length > 80 ? `${[...text].slice(0, 80).join('').trimEnd()}…` : text;
 }
 
 const INITIAL_COUNT = 5;
@@ -75,7 +95,12 @@ export function HistoryCard({ contactId }: { contactId: string }) {
           <div key={entry.id} data-testid="history-entry">
             {index > 0 ? <Separator className="mb-3" /> : null}
             <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-medium">{ACTION_LABELS[entry.action] ?? entry.action}</p>
+              <p className="min-w-0 truncate text-sm font-medium">
+                {verbFor(entry)}
+                {entry.entityType !== 'contact' && entry.entityLabel ? (
+                  <span className="font-normal text-muted-foreground"> · {entry.entityLabel}</span>
+                ) : null}
+              </p>
               <p className="shrink-0 text-xs text-muted-foreground">
                 {formatDateTime(entry.createdAt)}
               </p>

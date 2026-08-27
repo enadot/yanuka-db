@@ -397,6 +397,62 @@ export function runRepositoryContractTests(
       expect(update?.changes?.displayName).toBeUndefined();
     });
 
+    it('note edits are on the record, with the wording they replaced', async () => {
+      const repo = await makeRepository();
+      const contact = await repo.createContact({
+        ...blankContact,
+        displayName: 'נתן הרושם',
+      });
+
+      const note = await repo.addNote({
+        contactId: contact.id,
+        body: 'ביקר בבני ברק אצל הרב',
+        isSensitive: false,
+      });
+      await repo.updateNote(note.id, 'עבר לגור בירושלים');
+      await repo.deleteNote(note.id);
+
+      const history = await repo.auditLog(contact.id);
+      const notes = history.filter((entry) => entry.entityType === 'note');
+      // Newest first: delete, update, create — all reachable from the card.
+      expect(notes.map((entry) => entry.action)).toEqual(['delete', 'update', 'create']);
+      expect(notes[1]?.changes?.body).toEqual({
+        from: 'ביקר בבני ברק אצל הרב',
+        to: 'עבר לגור בירושלים',
+      });
+      // The entry is labeled with the note's wording, so a deleted note stays
+      // readable from the history.
+      expect(notes[0]?.entityLabel).toContain('עבר לגור בירושלים');
+    });
+
+    it('a relationship appears in the history of both endpoints', async () => {
+      const repo = await makeRepository();
+      const a = await repo.createContact({ ...blankContact, displayName: 'איתן הראשון' });
+      const b = await repo.createContact({ ...blankContact, displayName: 'בועז השני' });
+
+      const edge = await repo.createRelationship({
+        fromContactId: a.id,
+        toContactId: b.id,
+        type: 'recommended',
+        notes: null,
+      });
+
+      for (const id of [a.id, b.id]) {
+        const created = (await repo.auditLog(id)).filter(
+          (entry) => entry.entityType === 'relationship',
+        );
+        expect(created.map((entry) => entry.action)).toEqual(['create']);
+      }
+
+      await repo.deleteRelationship(edge.id);
+      for (const id of [a.id, b.id]) {
+        const actions = (await repo.auditLog(id))
+          .filter((entry) => entry.entityType === 'relationship')
+          .map((entry) => entry.action);
+        expect(actions).toEqual(['delete', 'create']);
+      }
+    });
+
     it('reports stats', async () => {
       const repo = await makeRepository();
       const stats = await repo.stats();
