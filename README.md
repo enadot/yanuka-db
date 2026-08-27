@@ -31,8 +31,9 @@ Then try:
 | `+972 54 555 0134` | a contact, by a number in a different format |
 | `Ctrl` + `K` | the command palette, from anywhere |
 
-The desktop application (Tauri + SQLite) is built by CI on Windows and produced
-as `ContactsSetup.exe`.
+The desktop application (Tauri + SQLite) is built by CI on Windows; every
+tagged version is published on the repository's **Releases** page with the
+installer attached.
 
 ## Layout
 
@@ -57,9 +58,9 @@ docs/               architecture, database, search, sync, security, decisions
 ## Verification
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test   # 133 TypeScript tests
-cargo test -p yanuka-db -p yanuka-search   # 29 Rust tests
-pnpm --filter @yanuka/desktop test:e2e     # 11 Playwright tests in Chromium
+pnpm lint && pnpm typecheck && pnpm test   # every TypeScript suite
+cargo test -p yanuka-db -p yanuka-search   # storage and search crates
+pnpm --filter @yanuka/desktop test:e2e     # Playwright in real Chromium
 ```
 
 The migration tests run the **real** production `.sql` against real SQLite via
@@ -82,6 +83,12 @@ CI covers the shell on both `ubuntu-latest` (with the apt packages) and
 `windows-latest`.
 
 ## Running on Windows
+
+### No build needed: download the installer
+
+Every released version sits on the repository's **Releases** page as
+`Contacts_<version>_x64-setup.exe`, with that version's changelog as the
+release notes. Building locally is only needed for development.
 
 ### Prerequisites
 
@@ -158,9 +165,11 @@ Changes are not saved between runs; everything else behaves identically.
 ## Status
 
 Built and verified: the data model, the search engine, the local SQLite layer,
-and the Desktop MVP (search, list, detail, add, edit).
+and the desktop application — search, list, contact card with notes and
+relationships written in place, add/edit, CSV import, duplicate detection and
+merge, automatic backups and CSV export.
 
 Designed and deliberately deferred, each with its cost recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, encryption at rest, CSV/OCR import, local semantic search, and the
+enforcement, encryption at rest, OCR import, local semantic search, and the
 web and Android clients.

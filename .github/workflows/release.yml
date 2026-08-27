@@ -1,0 +1,70 @@
+name: Release
+
+# Pushing a version tag (v0.2.0) builds the Windows installer and publishes a
+# GitHub Release with the .exe attached — the permanent, findable home for
+# installers, unlike CI artifacts which expire after 30 days. The full story:
+# docs/VERSIONING.md.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: windows · installer → GitHub Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag that disagrees with the declared version would produce an
+      # installer whose filename lies about its contents. Refuse early.
+      - name: Verify the tag matches the declared version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared="$(node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json','utf8')).version")"
+          if [ "$tag" != "$declared" ]; then
+            echo "tag v$tag does not match tauri.conf.json version $declared" >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanuka/desktop tauri build
+
+      - name: Collect the installer
+        shell: bash
+        run: |
+          setup=$(ls target/release/bundle/nsis/*-setup.exe | head -n 1)
+          if [ -z "$setup" ]; then
+            echo "no NSIS installer was produced" >&2
+            exit 1
+          fi
+          cp "$setup" "Contacts_${GITHUB_REF_NAME#v}_x64-setup.exe"
+
+      - name: Extract release notes from the changelog
+        shell: bash
+        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "Contacts_${GITHUB_REF_NAME#v}_x64-setup.exe" \
+            --title "מאגר הקשרים ${GITHUB_REF_NAME#v}" \
+            --notes-file release-notes.md

@@ -326,3 +326,20 @@ suggestion engine the global search uses. Deleting from either side removes
 the single stored edge everywhere — pinned by contract tests that run against
 both the mock and the SQLite implementations, and by an e2e that reads the
 same edge from both cards through the inverse labels.
+
+## ADR-030 — מתקינים מתפרסמים ב־GitHub Releases
+
+Every CI run already produces a Windows installer, but as a workflow
+artifact: it expires after 30 days and lives behind the Actions UI — the
+wrong home for the one file the offline update story depends on (ADR-021:
+compare the version on the settings screen with the version in the
+installer's filename).
+
+A pushed `v<version>` tag now triggers a dedicated workflow that builds the
+NSIS installer and publishes a GitHub Release with the exe attached and that
+version's CHANGELOG section as the notes. Two guards keep the story honest:
+the tag must equal the version declared in `tauri.conf.json` (otherwise the
+filename would lie about the contents), and the changelog section must exist
+(otherwise the release would say nothing — `scripts/release-notes.mjs` fails
+the build). The per-push CI artifact remains as a convenience for testing
+unreleased builds.
