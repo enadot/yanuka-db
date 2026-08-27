@@ -1,6 +1,6 @@
 {
   "name": "@yanuka/desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "clean": "rimraf dist .turbo",
+    "clean": "rimraf dist .turbo tsconfig.tsbuildinfo",
     "test:e2e": "playwright test"
   },
   "dependencies": {

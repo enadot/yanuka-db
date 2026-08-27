@@ -13,7 +13,7 @@ members = ["crates/yanuka-db", "crates/yanuka-search", "apps/desktop/src-tauri"]
 # Windows/macOS. See docs/ARCHITECTURE.md.
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.77"
 license = "UNLICENSED"

@@ -16,6 +16,8 @@ export const queryKeys = {
   categories: () => ['categories'] as const,
   organizations: (query?: string) => ['organizations', query ?? ''] as const,
   stats: () => ['stats'] as const,
+  trash: () => ['contacts', 'trash'] as const,
+  history: (id: Ulid) => ['contacts', 'history', id] as const,
 };
 
 export function useSearch(input: SearchInput, enabled = true) {
@@ -169,6 +171,36 @@ export function useUpdateContact() {
       baseVersion?: number;
     }) => repository.updateContact(id, patch, baseVersion),
     onSuccess: invalidate,
+  });
+}
+
+export function useDeletedContacts() {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.trash(),
+    queryFn: () => repository.listDeletedContacts(100),
+  });
+}
+
+export function useRestoreContact() {
+  const repository = useRepository();
+  const invalidate = useInvalidateContacts();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.restoreContact(id),
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * The contact's history, straight from the mutation journal: every entry
+ * carries the fields that changed and the values they replaced.
+ */
+export function useContactHistory(id: Ulid | undefined) {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.history(id ?? ''),
+    queryFn: () => repository.auditLog(id!, 50),
+    enabled: Boolean(id),
   });
 }
 

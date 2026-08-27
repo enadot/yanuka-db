@@ -1,4 +1,4 @@
-import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags } from 'lucide-react';
+import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
@@ -195,6 +195,23 @@ export function SettingsScreen() {
           <p className="text-xs text-muted-foreground">
             קובץ הייצוא נפתח באקסל ומתייבא חזרה דרך מסך הייבוא ללא הגדרה נוספת.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Trash2 className="size-4" aria-hidden />
+            סל המחזור
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            אנשי קשר שנמחקו ממתינים כאן וניתנים לשחזור מלא בלחיצה.
+          </p>
+          <Button asChild variant="outline" className="shrink-0">
+            <Link to="/trash">לסל המחזור</Link>
+          </Button>
         </CardContent>
       </Card>
 

@@ -59,6 +59,7 @@ pub fn run() {
             commands::update_contact,
             commands::delete_contact,
             commands::restore_contact,
+            commands::list_deleted_contacts,
             commands::set_favorite,
             commands::touch_contact,
             commands::find_duplicates,

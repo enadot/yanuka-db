@@ -4,6 +4,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContactSummary,
   Note,
   Organization,
   Relationship,
@@ -125,6 +126,9 @@ export interface ContactsRepository {
   deleteContact(id: Ulid): Promise<void>;
 
   restoreContact(id: Ulid): Promise<ContactWithRelations>;
+
+  /** Soft-deleted contacts, newest deletion first — the trash screen. */
+  listDeletedContacts(limit?: number): Promise<DeletedContactSummary[]>;
 
   setFavorite(id: Ulid, isFavorite: boolean): Promise<void>;
 

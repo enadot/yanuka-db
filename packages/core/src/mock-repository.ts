@@ -12,6 +12,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContactSummary,
   FacetField,
   Note,
   Organization,
@@ -52,6 +53,30 @@ import type {
  * It is also the reference the SQLite implementation is checked against: both
  * pass `runRepositoryContractTests`.
  */
+/**
+ * The scalar fields whose edits the history remembers, mirroring the diff the
+ * SQLite journal records in `update_contact`. Children (phones, tags…) are
+ * journaled as part of the record rewrite, not field-by-field.
+ */
+const HISTORY_SCALARS = [
+  'firstName',
+  'lastName',
+  'displayName',
+  'prefix',
+  'title',
+  'country',
+  'region',
+  'city',
+  'address',
+  'postalCode',
+  'profession',
+  'role',
+  'notes',
+  'reasonForSaving',
+  'source',
+  'introducedBy',
+] as const;
+
 export class MockRepository implements ContactsRepository {
   private contacts: ContactWithRelations[];
   private tags: Tag[];
@@ -137,7 +162,11 @@ export class MockRepository implements ContactsRepository {
     return contact;
   }
 
-  private record(action: AuditLogEntry['action'], contact: ContactWithRelations): void {
+  private record(
+    action: AuditLogEntry['action'],
+    contact: ContactWithRelations,
+    changes: AuditLogEntry['changes'] = null,
+  ): void {
     this.audit.unshift({
       id: newId(),
       userId: null,
@@ -146,7 +175,7 @@ export class MockRepository implements ContactsRepository {
       entityType: 'contact',
       entityId: contact.id,
       entityLabel: contact.displayName,
-      changes: null,
+      changes,
       deviceId: 'browser',
       deviceName: 'דפדפן',
       createdAt: nowIso(),
@@ -470,7 +499,15 @@ export class MockRepository implements ContactsRepository {
 
     const updated = this.materialize(id, merged, existing);
     this.contacts = this.contacts.map((contact) => (contact.id === id ? updated : contact));
-    this.record('update', updated);
+    // Field-level before/after over the same scalars the SQLite journal diffs,
+    // so the history card reads identically against either backend.
+    const changes: NonNullable<AuditLogEntry['changes']> = {};
+    for (const key of HISTORY_SCALARS) {
+      const from = existing[key] ?? null;
+      const to = updated[key] ?? null;
+      if (from !== to) changes[key] = { from, to };
+    }
+    this.record('update', updated, Object.keys(changes).length > 0 ? changes : null);
     return updated;
   }
 
@@ -493,6 +530,15 @@ export class MockRepository implements ContactsRepository {
     contact.version += 1;
     this.record('restore', contact);
     return contact;
+  }
+
+  async listDeletedContacts(limit = 50): Promise<DeletedContactSummary[]> {
+    await this.tick();
+    return this.contacts
+      .filter((contact) => contact.deletedAt !== null)
+      .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''))
+      .slice(0, limit)
+      .map((contact) => ({ ...toSummary(contact), deletedAt: contact.deletedAt ?? '' }));
   }
 
   async setFavorite(id: Ulid, isFavorite: boolean): Promise<void> {

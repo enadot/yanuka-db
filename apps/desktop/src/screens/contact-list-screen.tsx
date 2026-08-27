@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Star, Users } from 'lucide-react';
+import { Plus, Star, Trash2, Users } from 'lucide-react';
 import { formatSubtitle, initials } from '@yanuka/core';
 import { formatRelative } from '@yanuka/utils';
 import {
@@ -83,6 +83,12 @@ export function ContactListScreen() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+            <Link to="/trash">
+              <Trash2 className="size-4" aria-hidden />
+              סל המחזור
+            </Link>
+          </Button>
           <Select
             value={sort}
             onValueChange={(value) => reset(() => setSort(value as typeof sort))}

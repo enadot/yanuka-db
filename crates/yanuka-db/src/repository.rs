@@ -309,22 +309,20 @@ pub fn update_contact(
 ) -> Result<ContactWithRelations> {
     validate(input)?;
 
-    let current: (i64, String) = connection
-        .query_row("SELECT version, display_name FROM contacts WHERE id = ?1", params![id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
+    let before: Contact = connection
+        .query_row("SELECT * FROM contacts WHERE id = ?1", params![id], contact_from_row)
         .optional()?
         .ok_or_else(|| DbError::NotFound("איש הקשר".into()))?;
 
     if let Some(expected) = base_version {
-        if expected != current.0 {
-            return Err(DbError::StaleVersion { expected, actual: current.0 });
+        if expected != before.version {
+            return Err(DbError::StaleVersion { expected, actual: before.version });
         }
     }
 
     let device = device_id(connection)?;
     let now = now_iso();
-    let next_version = current.0 + 1;
+    let next_version = before.version + 1;
 
     let tx = connection.transaction()?;
     tx.execute(
@@ -367,15 +365,47 @@ pub fn update_contact(
 
     write_children(&tx, id, input, &now, &device)?;
 
+    // The journal's whole design rests on payload/previous carrying only the
+    // fields that actually changed (see mutation.rs) — that is what makes
+    // field-level sync merging possible and what the card history renders.
+    // Until now this recorded displayName alone, regardless of what changed.
+    let mut changed = serde_json::Map::new();
+    let mut was = serde_json::Map::new();
+    {
+        let mut diff = |key: &str, from: serde_json::Value, to: serde_json::Value| {
+            if from != to {
+                was.insert(key.to_string(), from);
+                changed.insert(key.to_string(), to);
+            }
+        };
+        diff("firstName", json!(before.first_name), json!(input.first_name));
+        diff("lastName", json!(before.last_name), json!(input.last_name));
+        diff("displayName", json!(before.display_name), json!(input.display_name.trim()));
+        diff("prefix", json!(before.prefix), json!(input.prefix));
+        diff("title", json!(before.title), json!(input.title));
+        diff("country", json!(before.country), json!(input.country));
+        diff("region", json!(before.region), json!(input.region));
+        diff("city", json!(before.city), json!(input.city));
+        diff("address", json!(before.address), json!(input.address));
+        diff("postalCode", json!(before.postal_code), json!(input.postal_code));
+        diff("profession", json!(before.profession), json!(input.profession));
+        diff("role", json!(before.role), json!(input.role));
+        diff("notes", json!(before.notes), json!(input.notes));
+        diff("reasonForSaving", json!(before.reason_for_saving), json!(input.reason_for_saving));
+        diff("source", json!(before.source), json!(input.source));
+        diff("introducedBy", json!(before.introduced_by), json!(input.introduced_by));
+    }
+    let payload = serde_json::Value::Object(changed);
+    let previous = serde_json::Value::Object(was);
     mutation::record(
         &tx,
         mutation::NewMutation {
             entity_type: "contact",
             entity_id: id,
             operation: Operation::Update,
-            payload: Some(&json!({ "displayName": input.display_name })),
-            previous: Some(&json!({ "displayName": current.1 })),
-            base_version: current.0,
+            payload: Some(&payload),
+            previous: Some(&previous),
+            base_version: before.version,
             device_id: &device,
         },
     )?;
@@ -746,6 +776,33 @@ pub fn list_contacts(
         .collect::<Result<Vec<_>>>()?;
 
     Ok(Page { items, next_cursor, total })
+}
+
+/// Soft-deleted contacts, newest deletion first — the trash screen. There is
+/// deliberately no pagination: the trash is a place things pass through, not
+/// a second archive.
+pub fn list_deleted_contacts(
+    connection: &Connection,
+    limit: i64,
+) -> Result<Vec<DeletedContactSummary>> {
+    let mut statement = connection.prepare(
+        "SELECT * FROM contacts WHERE deleted_at IS NOT NULL
+          ORDER BY deleted_at DESC, id DESC LIMIT ?1",
+    )?;
+    let contacts: Vec<Contact> = statement
+        .query_map(params![limit], contact_from_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    contacts
+        .into_iter()
+        .map(|contact| {
+            // The WHERE clause guarantees the value; falling back to updated_at
+            // keeps a hypothetical inconsistency visible instead of panicking.
+            let deleted_at =
+                contact.deleted_at.clone().unwrap_or_else(|| contact.updated_at.clone());
+            Ok(DeletedContactSummary { summary: summarize(connection, contact)?, deleted_at })
+        })
+        .collect()
 }
 
 /// Project a contact into the list/search shape, attaching its primary phone

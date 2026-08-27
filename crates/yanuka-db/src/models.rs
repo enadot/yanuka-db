@@ -25,6 +25,15 @@ pub struct ContactSummary {
     pub updated_at: IsoDateTime,
 }
 
+/// A soft-deleted contact as the trash screen shows it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedContactSummary {
+    #[serde(flatten)]
+    pub summary: ContactSummary,
+    pub deleted_at: IsoDateTime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContactPhone {

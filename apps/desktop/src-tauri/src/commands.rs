@@ -11,7 +11,7 @@
 use serde_json::Value;
 use tauri::State;
 use yanuka_db::models::*;
-use yanuka_db::{repository, search, taxonomy, DbError};
+use yanuka_db::{mutation, repository, search, taxonomy, DbError};
 
 use crate::state::AppState;
 
@@ -140,6 +140,14 @@ pub fn delete_contact(state: State<'_, AppState>, id: String) -> Answer<()> {
 #[tauri::command]
 pub fn restore_contact(state: State<'_, AppState>, id: String) -> Answer<ContactWithRelations> {
     state.with(|connection| repository::restore_contact(connection, &id))
+}
+
+#[tauri::command]
+pub fn list_deleted_contacts(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Answer<Vec<DeletedContactSummary>> {
+    state.with(|connection| repository::list_deleted_contacts(connection, limit.unwrap_or(50)))
 }
 
 #[tauri::command]
@@ -380,32 +388,13 @@ pub fn audit_log(
     entity_id: Option<String>,
     limit: Option<i64>,
 ) -> Answer<Vec<Value>> {
-    state.with(|connection| {
-        let limit = limit.unwrap_or(50);
-        let mut statement = connection.prepare(
-            "SELECT id, user_id, user_display_name, action, entity_type, entity_id,
-                    entity_label, device_id, device_name, created_at
-               FROM audit_log
-              WHERE (?1 IS NULL OR entity_id = ?1)
-              ORDER BY created_at DESC LIMIT ?2",
-        )?;
-        let rows = statement.query_map(yanuka_db::rusqlite::params![entity_id, limit], |row| {
-            Ok(serde_json::json!({
-                "id": row.get::<_, String>(0)?,
-                "userId": row.get::<_, Option<String>>(1)?,
-                "userDisplayName": row.get::<_, Option<String>>(2)?,
-                "action": row.get::<_, String>(3)?,
-                "entityType": row.get::<_, String>(4)?,
-                "entityId": row.get::<_, Option<String>>(5)?,
-                "entityLabel": row.get::<_, Option<String>>(6)?,
-                "changes": Value::Null,
-                "deviceId": row.get::<_, Option<String>>(7)?,
-                "deviceName": row.get::<_, Option<String>>(8)?,
-                "createdAt": row.get::<_, String>(9)?,
-            }))
-        })?;
-        Ok(rows.collect::<yanuka_db::rusqlite::Result<Vec<_>>>()?)
-    })
+    // History is derived from the mutation journal — the log every write
+    // already appends to, in the same transaction, with the changed fields
+    // and their previous values. The audit_log table stays reserved for the
+    // multi-user era (ADR-020); nothing writes to it yet, and reading it
+    // here would show an always-empty history.
+    state
+        .with(|connection| mutation::history(connection, entity_id.as_deref(), limit.unwrap_or(50)))
 }
 
 /// Snapshot the live database to a user-chosen destination (typically a USB

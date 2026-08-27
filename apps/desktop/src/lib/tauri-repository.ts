@@ -5,6 +5,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContactSummary,
   Note,
   Organization,
   Relationship,
@@ -103,6 +104,10 @@ export class TauriRepository implements ContactsRepository {
 
   restoreContact(id: Ulid): Promise<ContactWithRelations> {
     return this.call('restore_contact', { id });
+  }
+
+  listDeletedContacts(limit = 50): Promise<DeletedContactSummary[]> {
+    return this.call('list_deleted_contacts', { limit });
   }
 
   setFavorite(id: Ulid, isFavorite: boolean): Promise<void> {
@@ -210,6 +215,7 @@ export const IPC_COMMANDS = [
   'update_contact',
   'delete_contact',
   'restore_contact',
+  'list_deleted_contacts',
   'set_favorite',
   'touch_contact',
   'find_duplicates',

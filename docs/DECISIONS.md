@@ -343,3 +343,36 @@ filename would lie about the contents), and the changelog section must exist
 (otherwise the release would say nothing — `scripts/release-notes.mjs` fails
 the build). The per-push CI artifact remains as a convenience for testing
 unreleased builds.
+
+## ADR-031 — סל מחזור והיסטוריה: הרשת של עדיפות 1
+
+Deletion was soft from day one, but the UI made a promise it could not keep:
+the delete toast said "הועבר לסל המחזור" while no such screen existed — once
+the toast faded, the row was unreachable from the application. Likewise every
+write already landed in the mutation journal with the changed fields *and*
+their previous values, while nothing could read any of it back.
+
+Trash: `/trash` lists soft-deleted contacts — `list_deleted_contacts` exists
+on both backends and is pinned by contract and Rust tests — each row with its
+deletion time and a restore button. Deliberately no "empty the trash":
+permanent erasure must propagate through sync first (ADR-019), so offering it
+now would contradict the reason the screen exists.
+
+History: the card's history is **derived from the mutation journal**
+(`mutation::history`), not from the `audit_log` table — nothing writes that
+table yet, and it stays reserved for the multi-user era (ADR-020). The
+`audit_log` IPC command now reads the journal, mapping payload shapes back to
+verbs (a restore is an update whose payload clears `deletedAt`; a merge is
+recognizable by `mergedFrom`/`mergedInto`).
+
+Fixed on the way: `update_contact` journaled only `displayName` no matter
+what changed — starving both this history and the field-level sync merge the
+journal exists to enable. It now diffs every scalar field into
+`payload`/`previous`, and the mock mirrors the same diff so both backends
+render identical history.
+
+Known gap, deliberately deferred to the sync stage: taxonomy writes (notes,
+relationships, tags, categories) do not journal yet. The card shows their
+current state but not their history — and the sync engine will need those
+entries anyway, so the fix belongs to that stage, once, rather than
+piecemeal here.

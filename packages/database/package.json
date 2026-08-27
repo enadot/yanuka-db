@@ -22,7 +22,7 @@
     "typecheck": "pnpm generate && tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test": "pnpm generate && vitest run",
-    "clean": "rimraf dist .turbo src/generated"
+    "clean": "rimraf dist .turbo src/generated tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "@yanuka/types": "workspace:*",

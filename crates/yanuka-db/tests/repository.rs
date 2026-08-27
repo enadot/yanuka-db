@@ -5,7 +5,7 @@
 //! layer is a separate crate.
 
 use yanuka_db::models::{ContactInput, PhoneInput, SearchQuery};
-use yanuka_db::{migrate, open_in_memory, repository, search, taxonomy};
+use yanuka_db::{migrate, mutation, open_in_memory, repository, search, taxonomy};
 
 fn db() -> yanuka_db::rusqlite::Connection {
     let mut connection = open_in_memory().expect("open");
@@ -603,4 +603,53 @@ fn on_demand_backup_writes_to_an_arbitrary_target() {
     let count: i64 =
         restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();
     assert_eq!(count, 1);
+}
+
+#[test]
+fn deleted_contacts_wait_in_the_trash_until_restored() {
+    let mut connection = db();
+    let created =
+        repository::create_contact(&mut connection, &contact("נחום הנמחק"), None).unwrap();
+    let id = created.contact.id.clone();
+
+    repository::delete_contact(&mut connection, &id).unwrap();
+    let trash = repository::list_deleted_contacts(&connection, 50).unwrap();
+    let entry = trash.iter().find(|row| row.summary.id == id).expect("in the trash");
+    assert!(!entry.deleted_at.is_empty());
+    let living = repository::list_contacts(&connection, None, 200, None).unwrap();
+    assert!(!living.items.iter().any(|row| row.id == id));
+
+    repository::restore_contact(&mut connection, &id).unwrap();
+    let trash = repository::list_deleted_contacts(&connection, 50).unwrap();
+    assert!(!trash.iter().any(|row| row.summary.id == id));
+    let living = repository::list_contacts(&connection, None, 200, None).unwrap();
+    assert!(living.items.iter().any(|row| row.id == id));
+}
+
+#[test]
+fn history_remembers_what_changed_and_what_it_was_before() {
+    let mut connection = db();
+    let mut input = contact("זכריה הזכור");
+    input.city = Some("ירושלים".into());
+    let created = repository::create_contact(&mut connection, &input, None).unwrap();
+    let id = created.contact.id.clone();
+
+    let mut updated = input.clone();
+    updated.city = Some("צפת".into());
+    repository::update_contact(&mut connection, &id, &updated, None).unwrap();
+    repository::delete_contact(&mut connection, &id).unwrap();
+    repository::restore_contact(&mut connection, &id).unwrap();
+
+    let history = mutation::history(&connection, Some(&id), 50).unwrap();
+    let actions: Vec<&str> =
+        history.iter().map(|entry| entry["action"].as_str().unwrap()).collect();
+    // Newest first: restore, delete, update, create.
+    assert_eq!(actions, vec!["restore", "delete", "update", "create"]);
+
+    let update = &history[2];
+    assert_eq!(update["changes"]["city"]["from"], "ירושלים");
+    assert_eq!(update["changes"]["city"]["to"], "צפת");
+    // A field that did not change does not clutter the entry.
+    assert!(update["changes"].get("displayName").is_none());
+    assert_eq!(update["entityLabel"], "זכריה הזכור");
 }

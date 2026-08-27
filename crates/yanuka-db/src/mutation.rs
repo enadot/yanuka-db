@@ -12,8 +12,8 @@
 //!
 //! See docs/SYNC.md.
 
-use rusqlite::{params, Transaction};
-use serde_json::Value;
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use serde_json::{json, Value};
 
 use crate::error::Result;
 use crate::{new_id, now_iso};
@@ -103,4 +103,119 @@ pub fn diff(previous: &Value, next: &Value) -> Value {
         }
     }
     Value::Object(changed)
+}
+
+/// Render the mutation log as history entries for the UI — who did what, when,
+/// with field-level before/after reconstructed from `payload` × `previous`.
+/// Derived data only: the log itself is the sync journal and is never
+/// rewritten. Shapes match the TypeScript `AuditLogEntry`.
+pub fn history(connection: &Connection, entity_id: Option<&str>, limit: i64) -> Result<Vec<Value>> {
+    let mut statement = connection.prepare(
+        "SELECT m.id, m.entity_type, m.entity_id, m.operation, m.payload, m.previous,
+                m.created_at, m.device_id
+           FROM mutations m
+          WHERE (?1 IS NULL OR m.entity_id = ?1)
+          ORDER BY m.created_at DESC, m.id DESC LIMIT ?2",
+    )?;
+    type Row = (String, String, String, String, Option<String>, Option<String>, String, String);
+    let rows: Vec<Row> = statement
+        .query_map(params![entity_id, limit], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut entries = Vec::with_capacity(rows.len());
+    for (id, entity_type, entity_id, operation, payload, previous, created_at, device_id) in rows {
+        let payload: Option<Value> =
+            payload.as_deref().and_then(|raw| serde_json::from_str(raw).ok());
+        let previous: Option<Value> =
+            previous.as_deref().and_then(|raw| serde_json::from_str(raw).ok());
+
+        // The journal stores three raw operations; the UI knows four verbs.
+        // Restores and merges are recognizable by their payload shapes
+        // (restore_contact and merge_contacts write them — see those fns).
+        let has_key = |value: &Option<Value>, key: &str| {
+            value.as_ref().and_then(|inner| inner.get(key)).is_some()
+        };
+        let action = match operation.as_str() {
+            "create" => "create",
+            "delete" => {
+                if has_key(&payload, "mergedInto") {
+                    "merge"
+                } else {
+                    "delete"
+                }
+            }
+            _ => {
+                if has_key(&payload, "deletedAt") {
+                    "restore"
+                } else if has_key(&payload, "mergedFrom") {
+                    "merge"
+                } else {
+                    "update"
+                }
+            }
+        };
+
+        let changes = if action == "update" {
+            payload
+                .as_ref()
+                .and_then(Value::as_object)
+                .filter(|object| !object.is_empty())
+                .map(|object| {
+                    let before = previous.as_ref().and_then(Value::as_object);
+                    let map: serde_json::Map<String, Value> = object
+                        .iter()
+                        .map(|(key, to)| {
+                            let from = before
+                                .and_then(|inner| inner.get(key))
+                                .cloned()
+                                .unwrap_or(Value::Null);
+                            (key.clone(), json!({ "from": from, "to": to }))
+                        })
+                        .collect();
+                    Value::Object(map)
+                })
+                .unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
+
+        // The label makes an entry readable outside the card it belongs to.
+        let label: Option<String> = if entity_type == "contact" {
+            connection
+                .query_row(
+                    "SELECT display_name FROM contacts WHERE id = ?1",
+                    params![entity_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+        } else {
+            None
+        };
+
+        entries.push(json!({
+            "id": id,
+            "userId": null,
+            "userDisplayName": null,
+            "action": action,
+            "entityType": entity_type,
+            "entityId": entity_id,
+            "entityLabel": label,
+            "changes": changes,
+            "deviceId": device_id,
+            "deviceName": null,
+            "createdAt": created_at,
+        }));
+    }
+    Ok(entries)
 }

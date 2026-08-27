@@ -344,6 +344,59 @@ export function runRepositoryContractTests(
       expect(await repo.mergeContacts(keep.id, keep.id).catch(() => 'rejected')).toBe('rejected');
     });
 
+    it('a deleted contact waits in the trash and leaves it on restore', async () => {
+      const repo = await makeRepository();
+      const contact = await repo.createContact({
+        ...blankContact,
+        displayName: 'נחום הנמחק',
+      });
+
+      await repo.deleteContact(contact.id);
+      const trash = await repo.listDeletedContacts();
+      const entry = trash.find((row) => row.id === contact.id);
+      expect(entry).toBeDefined();
+      expect(entry?.deletedAt).toBeTruthy();
+      // Gone from the living list…
+      const living = await repo.listContacts({
+        cursor: null,
+        limit: 200,
+        sort: 'name',
+        startsWith: null,
+        favoritesOnly: false,
+        includeDeleted: false,
+      });
+      expect(living.items.some((row) => row.id === contact.id)).toBe(false);
+
+      // …and back in it after a restore, out of the trash.
+      await repo.restoreContact(contact.id);
+      expect((await repo.listDeletedContacts()).some((row) => row.id === contact.id)).toBe(false);
+      const restored = await repo.getContact(contact.id);
+      expect(restored?.deletedAt).toBeNull();
+    });
+
+    it('history remembers what changed and what it was before', async () => {
+      const repo = await makeRepository();
+      const contact = await repo.createContact({
+        ...blankContact,
+        displayName: 'זכריה הזכור',
+        city: 'ירושלים',
+      });
+
+      await repo.updateContact(contact.id, { city: 'צפת' });
+      await repo.deleteContact(contact.id);
+      await repo.restoreContact(contact.id);
+
+      const history = await repo.auditLog(contact.id);
+      const actions = history.map((entry) => entry.action);
+      // Newest first: restore, delete, update, create.
+      expect(actions.slice(0, 4)).toEqual(['restore', 'delete', 'update', 'create']);
+
+      const update = history.find((entry) => entry.action === 'update');
+      expect(update?.changes?.city).toEqual({ from: 'ירושלים', to: 'צפת' });
+      // Fields that did not change do not clutter the entry.
+      expect(update?.changes?.displayName).toBeUndefined();
+    });
+
     it('reports stats', async () => {
       const repo = await makeRepository();
       const stats = await repo.stats();

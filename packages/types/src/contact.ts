@@ -238,3 +238,8 @@ export interface ContactSummary {
   isFavorite: boolean;
   updatedAt: IsoDateTime;
 }
+
+/** A soft-deleted contact as the trash screen shows it. */
+export interface DeletedContactSummary extends ContactSummary {
+  deletedAt: IsoDateTime;
+}

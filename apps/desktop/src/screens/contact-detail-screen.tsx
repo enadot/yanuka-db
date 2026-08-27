@@ -39,9 +39,15 @@ import {
   TooltipTrigger,
 } from '@yanuka/ui';
 import { toast } from 'sonner';
+import { HistoryCard } from '../components/contact/history-card';
 import { NotesCard } from '../components/contact/notes-card';
 import { RelationshipsCard } from '../components/contact/relationships-card';
-import { useContact, useDeleteContact, useSetFavorite } from '../hooks/use-contacts';
+import {
+  useContact,
+  useDeleteContact,
+  useRestoreContact,
+  useSetFavorite,
+} from '../hooks/use-contacts';
 import { useRepository } from '../lib/repository';
 
 const PHONE_KIND_LABELS: Record<string, string> = {
@@ -69,6 +75,7 @@ export function ContactDetailScreen() {
   const navigate = useNavigate();
   const setFavorite = useSetFavorite();
   const deleteContact = useDeleteContact();
+  const restoreContact = useRestoreContact();
 
   // Records the visit so recency can inform ranking and the home screen.
   useEffect(() => {
@@ -103,12 +110,14 @@ export function ContactDetailScreen() {
 
   const remove = async () => {
     await deleteContact.mutateAsync(contact.id);
-    // Soft delete, so offering to undo is honest — the row is still there.
+    // Soft delete, and the trash screen is the durable way back; the toast
+    // action is just the fast path. Going through the hook (not the raw
+    // repository) keeps every list and counter in sync after the undo.
     toast.success('איש הקשר הועבר לסל המחזור', {
       action: {
         label: 'ביטול',
         onClick: () => {
-          void repository.restoreContact(contact.id);
+          void restoreContact.mutateAsync(contact.id);
         },
       },
     });
@@ -327,6 +336,8 @@ export function ContactDetailScreen() {
       <NotesCard contact={contact} />
 
       <RelationshipsCard contact={contact} />
+
+      <HistoryCard contactId={contact.id} />
 
       <p className="text-xs text-muted-foreground">
         נוצר {formatDateTime(contact.createdAt)} · עודכן {formatDateTime(contact.updatedAt)} · גרסה{' '}
