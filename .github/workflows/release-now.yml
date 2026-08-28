@@ -1,0 +1,17 @@
+name: Release now
+
+# Temporary bootstrap, same as for v0.2.0: this session cannot push tags and
+# release.yml's manual trigger only registers once it reaches the default
+# branch. Triggers the release from a push to the development branch; deleted
+# once v0.4.0 is published.
+
+on:
+  push:
+    branches: ['claude/shadcn-ui-install-issue-jwfa9n']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/release.yml
