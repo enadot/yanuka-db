@@ -1,4 +1,4 @@
-﻿; Hebrew translation of Tauri's custom NSIS strings.
+; Hebrew translation of Tauri's custom NSIS strings.
 ;
 ; Tauri 2.x embeds translations for 22 languages — Hebrew is not one of them.
 ; Requesting `languages: ["Hebrew"]` still activates NSIS's core Hebrew (the
