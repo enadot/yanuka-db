@@ -106,7 +106,7 @@ jobs:
           retention-days: 7
 
   installer:
-    name: windows · ContactsSetup.exe
+    name: windows · OtzarShlomoSetup.exe
     runs-on: windows-latest
     needs: [checks, rust]
     steps:
@@ -132,11 +132,11 @@ jobs:
           $setup = Get-ChildItem -Path target\release\bundle\nsis -Filter *-setup.exe |
                    Select-Object -First 1
           if (-not $setup) { throw "no NSIS installer was produced" }
-          Copy-Item $setup.FullName -Destination ContactsSetup.exe
-          Write-Host "produced ContactsSetup.exe from $($setup.Name)"
+          Copy-Item $setup.FullName -Destination OtzarShlomoSetup.exe
+          Write-Host "produced OtzarShlomoSetup.exe from $($setup.Name)"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ContactsSetup
-          path: ContactsSetup.exe
+          name: OtzarShlomoSetup
+          path: OtzarShlomoSetup.exe
           retention-days: 30

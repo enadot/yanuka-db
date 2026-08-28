@@ -1,4 +1,4 @@
-# מאגר הקשרים — offline-first smart contacts database
+# אוצר שלמה — offline-first smart contacts database
 
 A contacts database built around one job: **find a person when the name is
 forgotten** and all that remains is a profession, a city, who made the
@@ -87,7 +87,7 @@ CI covers the shell on both `ubuntu-latest` (with the apt packages) and
 ### No build needed: download the installer
 
 Every released version sits on the repository's **Releases** page as
-`Contacts_<version>_x64-setup.exe`, with that version's changelog as the
+`OtzarShlomo_<version>_x64-setup.exe`, with that version's changelog as the
 release notes. Building locally is only needed for development.
 
 ### Prerequisites
@@ -119,7 +119,7 @@ pnpm --filter @yanuka/desktop tauri build
 ```
 
 The NSIS output lands in `target\release\bundle\nsis\`; CI copies it to
-`ContactsSetup.exe`. The installer is **unsigned**, so SmartScreen shows
+`OtzarShlomoSetup.exe`. The installer is **unsigned**, so SmartScreen shows
 "Windows protected your PC" on first run — *More info* → *Run anyway*. See
 `docs/DECISIONS.md` ADR-021.
 

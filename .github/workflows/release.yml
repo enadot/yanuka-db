@@ -60,7 +60,7 @@ jobs:
             echo "no NSIS installer was produced" >&2
             exit 1
           fi
-          cp "$setup" "Contacts_${{ steps.version.outputs.version }}_x64-setup.exe"
+          cp "$setup" "OtzarShlomo_${{ steps.version.outputs.version }}_x64-setup.exe"
 
       - name: Extract release notes from the changelog
         shell: bash
@@ -75,7 +75,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "v$VERSION" \
-            "Contacts_${VERSION}_x64-setup.exe" \
+            "OtzarShlomo_${VERSION}_x64-setup.exe" \
             --target "$GITHUB_SHA" \
-            --title "מאגר הקשרים $VERSION" \
+            --title "אוצר שלמה $VERSION" \
             --notes-file release-notes.md

@@ -462,3 +462,32 @@ included), never fetched — ADR-014's no-network-at-render guarantee holds.
 Weight range is 400–700, which covers every weight the UI uses; the system
 stack remains the fallback. Note Google Sans Flex was considered and
 rejected: as of this writing its Google Fonts build has no Hebrew subset.
+
+## ADR-035 — שם המוצר: אוצר שלמה
+
+The user named the system **אוצר שלמה**, replacing the working name "מאגר
+הקשרים" / "Contacts". The rename is skin-deep by design — split across three
+layers:
+
+- **Hebrew everywhere a person reads.** `productName` itself is now the
+  Hebrew name, so the Start Menu, the desktop shortcut, "Apps & features"
+  and the installer all say אוצר שלמה (Tauri's NSIS is Unicode; our own
+  Hebrew.nsh already proved the pipeline handles Hebrew). Window title, the
+  app shell, the sidebar art and the settings footer follow.
+- **ASCII where a filename travels.** `mainBinaryName` is pinned to
+  `OtzarShlomo` so the process name and install artifacts stay
+  filesystem-boring, and CI/release rename their outputs to
+  `OtzarShlomoSetup.exe` / `OtzarShlomo_<version>_x64-setup.exe` — GitHub
+  mangles non-ASCII asset names.
+- **Nothing where data lives.** The identifier `digital.baram.yanuka`, the
+  credential-store service name, the database path and the crate/package
+  names do not change. A rename that moved the appdata directory or the
+  encryption key would be a data-loss event for a branding request.
+
+One real migration exists: Tauri keys the uninstall registry entry by
+product name, so the new installer would not see the old "Contacts" install
+and Windows would list both. A `NSIS_HOOK_PREINSTALL` hook
+(`windows/hooks.nsh`) runs the old entry's own uninstaller silently first;
+the data survives because of the identifier decision above. The hook is
+worth its weight exactly once — it stays until we are confident no machine
+still runs a pre-0.6.0 install.

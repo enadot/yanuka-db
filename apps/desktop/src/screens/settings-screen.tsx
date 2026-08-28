@@ -356,7 +356,7 @@ export function SettingsScreen() {
       </Card>
 
       <p className="text-xs text-muted-foreground">
-        מאגר הקשרים · גרסה{' '}
+        אוצר שלמה · גרסה{' '}
         <span className="numeric" data-testid="app-version">
           {__APP_VERSION__}
         </span>

@@ -35,7 +35,7 @@ export function AppLayout() {
       <nav className="flex w-52 shrink-0 flex-col gap-1 border-e bg-sidebar p-3">
         <Link to="/" className="mb-4 flex items-center gap-2 px-2 py-1">
           <Database className="size-5 text-muted-foreground" aria-hidden />
-          <span className="font-semibold">מאגר הקשרים</span>
+          <span className="font-semibold">אוצר שלמה</span>
         </Link>
 
         {NAV_ITEMS.map((item) => (

@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Contacts",
-  "version": "0.5.1",
+  "productName": "אוצר שלמה",
+  "mainBinaryName": "OtzarShlomo",
+  "version": "0.6.0",
   "identifier": "digital.baram.yanuka",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -12,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "מאגר הקשרים",
+        "title": "אוצר שלמה",
         "width": 1280,
         "height": 860,
         "minWidth": 960,
@@ -46,6 +47,7 @@
         },
         "displayLanguageSelector": false,
         "installMode": "currentUser",
+        "installerHooks": "./windows/hooks.nsh",
         "installerIcon": "./icons/icon.ico",
         "sidebarImage": "./windows/installer-sidebar.bmp",
         "headerImage": "./windows/installer-header.bmp"
