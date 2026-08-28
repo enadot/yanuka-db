@@ -445,3 +445,20 @@ Mechanics, in the order they protect:
 Cost accepted: vendored OpenSSL on Windows CI (~10 min, predicted by
 ADR-018). Deliberately not done: passphrase layering on top of the stored
 key, and encrypting the browser build's demo data (there is no file).
+
+## ADR-034 — הפונט הוא Google Sans; תיקון עובדתי ל־ADR-032
+
+ADR-032 bundled Heebo on the claim that Google Sans was proprietary. That
+claim expired before it was written down: Google released Google Sans (and
+Google Sans Flex) under the SIL OFL in November 2025, and the Google Fonts
+build of Google Sans ships a real Hebrew subset — verified from the font
+file itself (all 27 Hebrew letters in the hebrew-subset woff2; copyright
+"The Google Sans Project Authors"). The user asked for Google Sans by name;
+with the license obstacle gone there was no product reason left to refuse.
+
+Mechanics unchanged from ADR-032, which is the part that mattered: the font
+is *bundled* (two variable woff2 subsets, hebrew + latin, ~48KB, OFL text
+included), never fetched — ADR-014's no-network-at-render guarantee holds.
+Weight range is 400–700, which covers every weight the UI uses; the system
+stack remains the fallback. Note Google Sans Flex was considered and
+rejected: as of this writing its Google Fonts build has no Hebrew subset.

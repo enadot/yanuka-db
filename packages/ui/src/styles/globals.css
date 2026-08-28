@@ -121,13 +121,13 @@
    * Font stack.
    *
    * No web fonts and no CDN: the application must start and render correctly
-   * on a machine that has never been online. Heebo leads because the desktop
-   * app bundles it locally (apps/desktop/public/fonts, ADR-032); everything
+   * on a machine that has never been online. Google Sans leads because the desktop
+   * app bundles it locally (apps/desktop/public/fonts, ADR-034); everything
    * after it is the system-font fallback that ADR-014 chose, and is what a
    * host without the bundled files still renders correctly with.
    */
   --font-sans:
-    'Heebo', 'Segoe UI', 'Noto Sans Hebrew', 'Arial Hebrew', 'Alef', 'Rubik', system-ui,
+    'Google Sans', 'Segoe UI', 'Noto Sans Hebrew', 'Arial Hebrew', 'Alef', 'Rubik', system-ui,
     -apple-system, 'Helvetica Neue', Arial, sans-serif;
   --font-display: 'Frank Ruehl CLM', 'David Libre', 'Times New Roman', Georgia, serif;
   --font-mono: 'Cascadia Mono', 'Consolas', 'SF Mono', 'Menlo', monospace;
