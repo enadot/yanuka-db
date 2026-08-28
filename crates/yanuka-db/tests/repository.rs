@@ -566,9 +566,9 @@ fn backup_snapshots_a_live_database_and_rotates_dailies() {
 
     // A same-day second call is a no-op; the snapshot itself must be a
     // complete, openable database.
-    let taken = yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap();
+    let taken = yanuka_db::backup::daily_backup(&connection, &db_path, 7, None).unwrap();
     let target = taken.expect("first daily backup should be taken");
-    assert!(yanuka_db::backup::daily_backup(&connection, &db_path, 7).unwrap().is_none());
+    assert!(yanuka_db::backup::daily_backup(&connection, &db_path, 7, None).unwrap().is_none());
 
     let restored = yanuka_db::open(&target, None).unwrap();
     let count: i64 =
@@ -583,7 +583,7 @@ fn backup_snapshots_a_live_database_and_rotates_dailies() {
     }
     // Force a new backup by removing today's, with keep=2.
     std::fs::remove_file(&target).unwrap();
-    yanuka_db::backup::daily_backup(&connection, &db_path, 2).unwrap().unwrap();
+    yanuka_db::backup::daily_backup(&connection, &db_path, 2, None).unwrap().unwrap();
     let dailies: Vec<_> = std::fs::read_dir(&backups)
         .unwrap()
         .filter_map(|e| e.ok())
@@ -604,7 +604,7 @@ fn on_demand_backup_writes_to_an_arbitrary_target() {
 
     // Nested directory that does not exist yet — a fresh USB stick path.
     let target = dir.path().join("usb").join("גיבוי-מאגר.db");
-    yanuka_db::backup::backup_to(&connection, &target).unwrap();
+    yanuka_db::backup::backup_to(&connection, &target, None).unwrap();
     let restored = yanuka_db::open(&target, None).unwrap();
     let count: i64 =
         restored.query_row("SELECT count(*) FROM contacts", [], |row| row.get(0)).unwrap();

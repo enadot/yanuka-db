@@ -167,9 +167,10 @@ Changes are not saved between runs; everything else behaves identically.
 Built and verified: the data model, the search engine, the local SQLite layer,
 and the desktop application — search, list, contact card with notes and
 relationships written in place, add/edit, CSV import, duplicate detection and
-merge, automatic backups and CSV export.
+merge, automatic backups and CSV export, and encryption at rest (SQLCipher,
+with a recovery key instead of a passphrase — ADR-033).
 
 Designed and deliberately deferred, each with its cost recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, encryption at rest, OCR import, local semantic search, and the
+enforcement, OCR import, local semantic search, and the
 web and Android clients.

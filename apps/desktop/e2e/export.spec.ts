@@ -28,3 +28,11 @@ test('exports every contact to a CSV the importer recognizes', async ({ page }) 
   expect(text).toContain('יעקב פרידמן');
   expect(text).toContain('ישראל סופר');
 });
+
+test('settings reports the security posture honestly in the browser build', async ({ page }) => {
+  // In the browser there is no database file to encrypt; the card must say
+  // that, not pretend. The encrypted/recovery-key variants are exercised by
+  // the Rust tests — this asserts the state routing reaches the screen.
+  await page.goto('/#/settings');
+  await expect(page.getByTestId('security-state')).toContainText('באפליקציית המחשב');
+});

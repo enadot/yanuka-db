@@ -23,11 +23,20 @@ fn io_error(error: io::Error) -> DbError {
 }
 
 /// Snapshot the open database into `target`, consistently, while in use.
-pub fn backup_to(connection: &Connection, target: &Path) -> Result<()> {
+///
+/// `key_pragma` is the SQLCipher raw-key literal of the *source* database, or
+/// `None` when it is unencrypted. The online-backup API writes pages through
+/// the destination's codec, so an unkeyed destination would silently produce a
+/// **plaintext** copy of an encrypted database — the classic way encryption at
+/// rest leaks through its own backups (threat 3 in docs/SECURITY.md).
+pub fn backup_to(connection: &Connection, target: &Path, key_pragma: Option<&str>) -> Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(io_error)?;
     }
     let mut destination = Connection::open(target)?;
+    if let Some(key) = key_pragma {
+        crate::connection::apply_key(&destination, key)?;
+    }
     let backup = rusqlite::backup::Backup::new(connection, &mut destination)?;
     backup.run_to_completion(64, std::time::Duration::from_millis(5), None)?;
     Ok(())
@@ -42,6 +51,7 @@ pub fn daily_backup(
     connection: &Connection,
     database_path: &Path,
     keep: usize,
+    key_pragma: Option<&str>,
 ) -> Result<Option<PathBuf>> {
     let backups = backups_directory(database_path);
     let today = &now_iso()[..10];
@@ -50,7 +60,7 @@ pub fn daily_backup(
         return Ok(None);
     }
 
-    backup_to(connection, &target)?;
+    backup_to(connection, &target, key_pragma)?;
     prune_daily(&backups, keep)?;
     Ok(Some(target))
 }

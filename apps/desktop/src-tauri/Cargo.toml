@@ -14,13 +14,23 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-yanuka-db = { path = "../../../crates/yanuka-db" }
+# `sqlcipher` swaps rusqlite's bundled SQLite for bundled SQLCipher with a
+# vendored OpenSSL — encryption at rest, ADR-033. The shipped desktop always
+# builds with it; the cost is compile time, not a runtime dependency.
+yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher"] }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
+# The database key lives in the OS credential store (Windows Credential
+# Manager). Only the Windows backend is compiled in: on other platforms the
+# store reports itself unavailable and the shell runs unencrypted, which is
+# exactly what development on Linux/macOS needs.
+keyring = { version = "3", features = ["windows-native"] }
+# Random 256-bit database key. `getrandom` is the OS entropy syscall, thin.
+getrandom = "0.3"
 
 [features]
 # Used by `tauri dev` to enable the custom protocol on desktop.

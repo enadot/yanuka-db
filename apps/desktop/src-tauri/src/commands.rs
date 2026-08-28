@@ -402,7 +402,10 @@ pub fn audit_log(
 #[tauri::command]
 pub fn backup_database(state: State<'_, AppState>, target_path: String) -> Answer<String> {
     let target = std::path::PathBuf::from(&target_path);
-    state.with(|connection| yanuka_db::backup::backup_to(connection, &target))?;
+    // The backup is keyed with the live database's key, so a copy on a USB
+    // stick is as protected as the original (threat 3 in docs/SECURITY.md).
+    let key = state.key_pragma();
+    state.with(|connection| yanuka_db::backup::backup_to(connection, &target, key.as_deref()))?;
     Ok(target_path)
 }
 
@@ -416,6 +419,30 @@ pub fn backup_status(state: State<'_, AppState>) -> Answer<Value> {
             .parent()
             .map(|parent| parent.join("backups").display().to_string()),
     }))
+}
+
+/// Encryption state for the settings screen: `encrypted`, `plaintext` (no
+/// credential store, or a failed upgrade), or `locked` (an encrypted file
+/// whose key the store does not hold — a restored backup on a new machine).
+#[tauri::command]
+pub fn security_status(state: State<'_, AppState>) -> Answer<Value> {
+    Ok(state.security_status())
+}
+
+/// The recovery key in display form. Shown in settings behind a click, so it
+/// can be written down and kept off the machine — the only thing that opens
+/// the database and its backups if Windows is ever reinstalled.
+#[tauri::command]
+pub fn recovery_key(state: State<'_, AppState>) -> Answer<Value> {
+    Ok(serde_json::json!({ "key": state.recovery_key() }))
+}
+
+/// Open a locked database with a recovery key the user typed, and remember
+/// the key in the OS credential store for the next launch.
+#[tauri::command]
+pub fn unlock_database(state: State<'_, AppState>, key: String) -> Answer<Value> {
+    state.unlock(&key)?;
+    Ok(state.security_status())
 }
 
 /// Write an exported CSV where the user chose to save it.

@@ -1,4 +1,15 @@
-import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
+import {
+  Database,
+  DatabaseBackup,
+  FileUp,
+  HardDrive,
+  Info,
+  KeyRound,
+  ShieldCheck,
+  ShieldOff,
+  Tags,
+  Trash2,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
@@ -16,7 +27,15 @@ import {
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
-import { backupNow, backupStatus, exportContactsCsv, type BackupStatus } from '../lib/desktop-io';
+import {
+  backupNow,
+  backupStatus,
+  exportContactsCsv,
+  recoveryKey,
+  securityStatus,
+  type BackupStatus,
+  type SecurityStatus,
+} from '../lib/desktop-io';
 import { useRepository } from '../lib/repository';
 import { useIsLocalDatabase } from '../lib/repository';
 
@@ -37,9 +56,27 @@ export function SettingsScreen() {
   const [backup, setBackup] = useState<BackupStatus | null>(null);
   const [busy, setBusy] = useState<'backup' | 'export' | null>(null);
 
+  const [security, setSecurity] = useState<SecurityStatus | null>(null);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+
   useEffect(() => {
     void backupStatus().then(setBackup);
+    void securityStatus().then(setSecurity);
   }, []);
+
+  const revealRecoveryKey = async () => {
+    try {
+      setRevealedKey(await recoveryKey());
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'הצגת המפתח נכשלה');
+    }
+  };
+
+  const copyRecoveryKey = async () => {
+    if (!revealedKey) return;
+    await navigator.clipboard.writeText(revealedKey);
+    toast.success('מפתח השחזור הועתק');
+  };
 
   const runBackup = async () => {
     setBusy('backup');
@@ -195,6 +232,77 @@ export function SettingsScreen() {
           <p className="text-xs text-muted-foreground">
             קובץ הייצוא נפתח באקסל ומתייבא חזרה דרך מסך הייבוא ללא הגדרה נוספת.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            {security?.state === 'encrypted' ? (
+              <ShieldCheck className="size-4" aria-hidden />
+            ) : (
+              <ShieldOff className="size-4" aria-hidden />
+            )}
+            הצפנה
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {security?.state === 'encrypted' ? (
+            <>
+              <p className="text-sm text-muted-foreground" data-testid="security-state">
+                המאגר והגיבויים מוצפנים (SQLCipher, AES-256).{' '}
+                {security.keyPersisted
+                  ? 'המפתח שמור באחסון האישורים של Windows ונטען אוטומטית בכל הפעלה.'
+                  : 'המפתח מוחזק בזיכרון להפעלה הזו בלבד ולא נשמר.'}
+              </p>
+              <Alert>
+                <KeyRound className="size-4" />
+                <AlertTitle>מפתח השחזור</AlertTitle>
+                <AlertDescription>
+                  אם Windows יותקן מחדש או שהמחשב יוחלף, המאגר והגיבויים ייפתחו רק עם
+                  המפתח הזה. מומלץ להציג אותו פעם אחת, לכתוב או להדפיס, ולשמור מחוץ
+                  למחשב.
+                </AlertDescription>
+              </Alert>
+              {revealedKey ? (
+                <div className="space-y-2">
+                  <p
+                    dir="ltr"
+                    className="select-all break-all rounded-md border bg-muted p-3 text-center font-mono text-sm"
+                    data-testid="recovery-key-value"
+                  >
+                    {revealedKey}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => void copyRecoveryKey()}>
+                      העתקת המפתח
+                    </Button>
+                    <Button variant="ghost" onClick={() => setRevealedKey(null)}>
+                      הסתרה
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => void revealRecoveryKey()}
+                  data-testid="reveal-recovery-key"
+                >
+                  הצגת מפתח השחזור
+                </Button>
+              )}
+            </>
+          ) : security?.state === 'plaintext' ? (
+            <p className="text-sm text-muted-foreground" data-testid="security-state">
+              המאגר אינו מוצפן בסביבה הזו — אחסון האישורים של מערכת ההפעלה אינו זמין,
+              או שהשדרוג להצפנה נכשל. הנתונים עצמם זמינים כרגיל.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="security-state">
+              הצפנת המאגר פעילה באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה בזיכרון,
+              ואין קובץ שדורש הצפנה.
+            </p>
+          )}
         </CardContent>
       </Card>
 

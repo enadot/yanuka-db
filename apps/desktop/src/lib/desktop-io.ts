@@ -22,6 +22,36 @@ export async function backupStatus(): Promise<BackupStatus | null> {
   return (await invoke('backup_status')) as BackupStatus;
 }
 
+/**
+ * Encryption at rest is a property of the desktop's SQLite file; the browser
+ * build holds everything in memory and reports itself as such.
+ */
+export interface SecurityStatus {
+  state: 'encrypted' | 'plaintext' | 'locked' | 'browser';
+  keyPersisted: boolean;
+}
+
+export async function securityStatus(): Promise<SecurityStatus> {
+  if (!isTauri()) {
+    return { state: 'browser', keyPersisted: false };
+  }
+  return (await invoke('security_status')) as SecurityStatus;
+}
+
+/** The recovery key in display form, or null when the database is not encrypted. */
+export async function recoveryKey(): Promise<string | null> {
+  if (!isTauri()) {
+    return null;
+  }
+  const answer = (await invoke('recovery_key')) as { key: string | null };
+  return answer.key;
+}
+
+/** Open a locked database with a typed recovery key. Throws on a wrong key. */
+export async function unlockDatabase(key: string): Promise<SecurityStatus> {
+  return (await invoke('unlock_database', { key })) as SecurityStatus;
+}
+
 /** Ask for a destination and snapshot the live database there. */
 export async function backupNow(): Promise<string | null> {
   const { save } = await import('@tauri-apps/plugin-dialog');

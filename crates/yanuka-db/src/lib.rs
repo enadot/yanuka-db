@@ -11,6 +11,7 @@
 
 pub mod backup;
 pub mod connection;
+pub mod encryption;
 pub mod error;
 pub mod index;
 pub mod merge;

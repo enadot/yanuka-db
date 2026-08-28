@@ -172,10 +172,10 @@ shape is documented in ARCHITECTURE.md. What actually preserves the option is
 keeping the shared packages platform-agnostic and contract-tested — which is
 enforced by `runRepositoryContractTests`, not by an empty directory.
 
-## ADR-018 — DEFERRED: encryption at rest
+## ADR-018 — encryption at rest (delivered by ADR-033)
 
-The database file is unencrypted. This is the largest open security item; see
-SECURITY.md.
+Originally deferred; delivered in 0.5.0 — see ADR-033. The preparation below
+is what made it a contained change.
 
 Prepared for: every connection goes through one `open(path, key)` function that
 already accepts a key, the cargo feature exists, and `temp_store = MEMORY` is
@@ -409,3 +409,39 @@ The system stack remains as fallback.
 **The installer speaks the machine's language.** The NSIS language-selector
 dialog rendered with blank option labels on the target machine; it is gone.
 NSIS now picks Hebrew or English from the Windows locale directly.
+
+## ADR-033 — הצפנה במנוחה: מפתח אקראי, לא סיסמה
+
+Delivers ADR-018, with one design decision doing all the work: the SQLCipher
+key is a **random 256-bit value in the Windows credential store**, surfaced
+to the user as a recovery key — not a passphrase. A passphrase would invert
+the priority list: forgetting it turns priority 6 (security) into a total
+loss under priority 1, database and backups together. A random key costs the
+user nothing day to day, opens automatically at launch, and the recovery key
+(shown once from settings, kept off the machine) is the reinstall story.
+
+Mechanics, in the order they protect:
+
+- **Raw key, no KDF.** `x'<64 hex>'` form; Argon2id would stretch an
+  already-random 256-bit value into nothing but startup latency.
+- **Upgrade is export → verify → swap.** `sqlcipher_export` into a staging
+  file; the staging file is opened with the key, integrity-checked and
+  row-counted before the rename. A crash at any earlier point leaves the
+  plaintext original untouched. A failed upgrade opens plaintext and says so
+  in settings — the data must open even when encryption cannot be had.
+- **Backups are keyed.** The online-backup API writes through the
+  destination's codec; an unkeyed destination would have produced plaintext
+  copies of an encrypted database. `backup_to`/`daily_backup` now take the
+  key. The pre-migration copy is a byte copy and inherits encryption for
+  free.
+- **`locked` is a real state.** A restored file on a fresh Windows opens via
+  a recovery-key screen; the typed key is validated against the file and
+  then persisted. Every IPC command answers `DbError::Locked` until then.
+- **Dev builds degrade.** Only the Windows keyring backend is compiled; on
+  Linux/macOS the store reports unavailable and the shell runs plaintext —
+  which is also why the sqlcipher cargo feature stays a feature rather than
+  a default: the crate's tests run in both modes.
+
+Cost accepted: vendored OpenSSL on Windows CI (~10 min, predicted by
+ADR-018). Deliberately not done: passphrase layering on top of the stored
+key, and encrypting the browser build's demo data (there is no file).

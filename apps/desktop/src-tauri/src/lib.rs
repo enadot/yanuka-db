@@ -7,6 +7,7 @@
 
 mod backup;
 mod commands;
+mod keys;
 mod state;
 
 use state::AppState;
@@ -36,13 +37,18 @@ pub fn run() {
 
             let state = AppState::open(&database_path)?;
             // One backup per day, on launch. A failure here must never keep
-            // the user from their data — it is reported, not fatal.
-            state.with(|connection| {
-                match yanuka_db::backup::daily_backup(connection, &database_path, 7) {
+            // the user from their data — it is reported, not fatal. Keyed
+            // with the database's own key, so the copies are as protected as
+            // the original. Skipped while locked, by construction.
+            let key = state.key_pragma();
+            let _ = state.with(|connection| {
+                match yanuka_db::backup::daily_backup(connection, &database_path, 7, key.as_deref())
+                {
                     Ok(Some(path)) => eprintln!("daily backup: {}", path.display()),
                     Ok(None) => {}
                     Err(error) => eprintln!("daily backup failed: {error}"),
                 }
+                Ok(())
             });
             app.manage(state);
             Ok(())
@@ -82,6 +88,9 @@ pub fn run() {
             commands::database_stats,
             commands::backup_database,
             commands::backup_status,
+            commands::security_status,
+            commands::recovery_key,
+            commands::unlock_database,
             commands::save_exported_csv,
             commands::audit_log,
         ])

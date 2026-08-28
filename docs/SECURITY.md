@@ -82,31 +82,42 @@ Two details worth keeping when this is switched on:
 recording who did what, when, from which device, to which record. Written today,
 surfaced in the UI when there are multiple users to distinguish.
 
-## Encryption at rest — deferred, but designed for
+## Encryption at rest — enabled (ADR-033)
 
-**Not enabled.** The database file is currently unencrypted. This is the largest
-open item against threat 1, and it is a deliberate, dated decision rather than an
-oversight (ADR-018).
+**On, and transparent.** The shipped Windows desktop builds with the
+`sqlcipher` feature: the database file is SQLCipher-encrypted (AES-256), and a
+pre-encryption database is upgraded in place on first launch — exported into a
+staging file that is opened, integrity-checked and row-counted **before** the
+swap, so no failure mode touches the plaintext original.
 
-What has already been done so that enabling it is a contained change:
+**The key is random, not a passphrase.** 256 bits from the OS, held in the
+Windows credential store (`keyring`), applied as a raw key (`x'…'`, no KDF —
+stretching an already-random key buys nothing). A passphrase was rejected
+deliberately: forgetting it would turn priority 6 into a violation of
+priority 1, losing the database and every backup at once. Settings surfaces
+the key as a **recovery key** with the instruction to keep it off the
+machine; that key is the reinstall/new-machine story, entered once on a
+dedicated unlock screen and then re-persisted.
 
-- **Every connection is opened through one function**, `yanuka_db::open(path,
-  key)`, which already takes a key parameter and rejects it with
-  `MissingCapability` unless the `sqlcipher` feature is compiled. No call site
-  will need to change.
-- **`PRAGMA temp_store = MEMORY` is already set.** Without it SQLCipher spills
-  plaintext temporary files to disk — the classic way an encrypted database
-  leaks anyway.
-- The cargo feature exists: `sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]`.
+**Backups are keyed.** `backup_to`/`daily_backup` key the destination with
+the live database's key — the online-backup API writes through the
+destination's codec, so an unkeyed destination would have silently produced
+plaintext copies. The pre-migration copy is a byte copy of the encrypted
+file and needs no handling. `PRAGMA temp_store = MEMORY` keeps SQLCipher
+from spilling plaintext temporaries.
 
-What remains: key derivation (Argon2id over a passphrase, or the OS keychain via
-`keyring`), a plaintext→encrypted upgrade path (`ATTACH … KEY …;
-SELECT sqlcipher_export('enc');`), and accepting an OpenSSL build on Windows CI
-that adds roughly ten minutes.
+**Degradation is visible, not silent.** No credential store (a Linux/macOS
+development build) or a failed upgrade opens the database unencrypted and
+says so in settings — the data must open (priorities 1–2) even when
+encryption cannot be had. An encrypted file whose key is absent is the one
+blocking state: every IPC command answers `locked` until the recovery key
+opens it.
 
-**Backups inherit whatever the database has.** They are unencrypted today
-because the database is. When encryption lands, the backup copy is already a
-byte copy of the encrypted file and needs no separate handling.
+What this does **not** defend: an attacker running as the logged-in Windows
+user can read the credential store entry. That is threat-model consistent —
+threats 1–3 (stolen machine, another account, leaked backup copies) are
+covered; a targeted attacker with the user's own session was out of scope
+from the start.
 
 ## In transit
 

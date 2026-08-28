@@ -36,6 +36,12 @@ pub enum DbError {
     /// A shipped migration was edited after it had already been applied.
     #[error("מיגרציה {0} שונתה לאחר שהוחלה — אין לערוך מיגרציות שכבר פורסמו")]
     MigrationChanged(String),
+
+    /// The database file is encrypted and no valid key has been provided yet.
+    /// The desktop shell answers every command with this until the user
+    /// supplies the recovery key. See docs/SECURITY.md.
+    #[error("המאגר מוצפן ונעול — נדרש מפתח שחזור")]
+    Locked,
 }
 
 /// Wire form of an error, matching what `toRepositoryError` expects on the
@@ -54,7 +60,9 @@ impl DbError {
             DbError::Validation(_) => "validation",
             DbError::StaleVersion { .. } => "stale_version",
             DbError::Duplicate => "duplicate",
-            DbError::MissingCapability(_) | DbError::MigrationChanged(_) => "unavailable",
+            DbError::MissingCapability(_) | DbError::MigrationChanged(_) | DbError::Locked => {
+                "unavailable"
+            }
             DbError::Sqlite(_) | DbError::Serde(_) => "database",
         }
     }

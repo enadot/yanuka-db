@@ -44,17 +44,29 @@ pub fn open_in_memory() -> Result<Connection> {
     Ok(connection)
 }
 
-fn configure(connection: &Connection, key: Option<&str>) -> Result<()> {
-    if key.is_some() {
-        #[cfg(not(feature = "sqlcipher"))]
-        return Err(DbError::MissingCapability("הצפנה"));
+/// Key a connection. Must run before any other statement — SQLite reads the
+/// header lazily, and the first real statement is what decrypts it.
+///
+/// The value is handed to `PRAGMA key` verbatim, so both forms SQLCipher
+/// accepts work: a passphrase, or the raw-key literal `x'<64 hex>'` that
+/// `encryption::raw_key_pragma` produces (which skips the KDF).
+pub fn apply_key(connection: &Connection, key: &str) -> Result<()> {
+    #[cfg(not(feature = "sqlcipher"))]
+    {
+        let _ = (connection, key);
+        Err(DbError::MissingCapability("הצפנה"))
+    }
 
-        #[cfg(feature = "sqlcipher")]
-        {
-            // Must be the first statement on the connection, before the header
-            // is read for any other purpose.
-            connection.pragma_update(None, "key", key.unwrap())?;
-        }
+    #[cfg(feature = "sqlcipher")]
+    {
+        connection.pragma_update(None, "key", key)?;
+        Ok(())
+    }
+}
+
+fn configure(connection: &Connection, key: Option<&str>) -> Result<()> {
+    if let Some(key) = key {
+        apply_key(connection, key)?;
     }
 
     for pragma in PRAGMAS {
