@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="apps/desktop/public/logo.png" alt="אוצר שלמה" width="160">
+</p>
+
 # אוצר שלמה — offline-first smart contacts database
 
 A contacts database built around one job: **find a person when the name is

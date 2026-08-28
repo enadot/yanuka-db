@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Database, Home, Plus, Search, Settings, Users } from 'lucide-react';
+import { Home, Plus, Search, Settings, Users } from 'lucide-react';
 import { Button, Separator, cn } from '@yanuka/ui';
 import { useCommandHotkey } from '../../hooks/use-hotkey';
 import { GlobalSearchDialog } from '../search/global-search-dialog';
@@ -34,7 +34,7 @@ export function AppLayout() {
     <div className="flex h-full min-h-0">
       <nav className="flex w-52 shrink-0 flex-col gap-1 border-e bg-sidebar p-3">
         <Link to="/" className="mb-4 flex items-center gap-2 px-2 py-1">
-          <Database className="size-5 text-muted-foreground" aria-hidden />
+          <img src="/logo.png" alt="" className="size-9" />
           <span className="font-semibold">אוצר שלמה</span>
         </Link>
 
