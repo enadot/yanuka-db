@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use yanuka_db::rusqlite::Connection;
+use yanuka_db::semantic::SemanticEngine;
 use yanuka_db::{encryption, migrate, open, DbError};
 
 use crate::keys;
@@ -26,6 +27,19 @@ struct Security {
     key_persisted: bool,
 }
 
+/// What the shell knows about semantic search right now.
+///
+/// `engine: None` is a normal state — a development run without the fetched
+/// model — and it must cost nothing: search skips the layer, settings says
+/// "unavailable". The counters describe the background catch-up so settings
+/// can show progress instead of a spinner.
+struct Semantic {
+    engine: Option<Arc<SemanticEngine>>,
+    indexed: usize,
+    pending: usize,
+    catching_up: bool,
+}
+
 /// The open database, guarded for shared access across IPC calls.
 ///
 /// A single connection behind a mutex rather than a pool: SQLite in WAL mode
@@ -36,6 +50,7 @@ struct Security {
 pub struct AppState {
     inner: Mutex<DbState>,
     security: Mutex<Security>,
+    semantic: Mutex<Semantic>,
     /// Where the database lives, for the backup commands.
     database_path: PathBuf,
 }
@@ -102,8 +117,64 @@ impl AppState {
         Self {
             inner: Mutex::new(state),
             security: Mutex::new(security),
+            semantic: Mutex::new(Semantic {
+                engine: None,
+                indexed: 0,
+                pending: 0,
+                catching_up: false,
+            }),
             database_path: path.to_path_buf(),
         }
+    }
+
+    /// Hand the loaded embedding model to the state; called once at setup.
+    pub fn attach_semantic(&self, engine: SemanticEngine) {
+        let mut semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        semantic.engine = Some(Arc::new(engine));
+        semantic.catching_up = true;
+    }
+
+    pub fn semantic_engine(&self) -> Option<Arc<SemanticEngine>> {
+        let semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        semantic.engine.clone()
+    }
+
+    pub fn set_semantic_progress(&self, indexed: usize, pending: usize, catching_up: bool) {
+        let mut semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        semantic.indexed = indexed;
+        semantic.pending = pending;
+        semantic.catching_up = catching_up;
+    }
+
+    pub fn semantic_status(&self) -> serde_json::Value {
+        let semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        serde_json::json!({
+            "state": if semantic.engine.is_none() {
+                "unavailable"
+            } else if semantic.catching_up {
+                "indexing"
+            } else {
+                "ready"
+            },
+            "indexed": semantic.indexed,
+            "pending": semantic.pending,
+        })
+    }
+
+    /// Bring one contact's semantic documents up to date after a mutation.
+    /// Failures are swallowed by design: a stale vector row is a worse search
+    /// result, not a broken application, and the reconciler will retry it on
+    /// the next startup catch-up.
+    pub fn semantic_touch(&self, contact_id: &str) {
+        let Some(engine) = self.semantic_engine() else {
+            return;
+        };
+        let _ = self.with(|connection| {
+            if let Err(error) = yanuka_db::semantic::sync_contact(connection, &engine, contact_id) {
+                eprintln!("semantic sync for {contact_id} failed: {error}");
+            }
+            Ok(())
+        });
     }
 
     /// Open the locked database with a recovery key the user supplied, then

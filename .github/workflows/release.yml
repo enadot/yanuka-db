@@ -50,6 +50,10 @@ jobs:
           workspaces: '. -> target'
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Fetch the semantic model
+        uses: ./.github/actions/semantic-model
+
       - run: pnpm --filter @yanuka/desktop tauri build
 
       - name: Collect the installer

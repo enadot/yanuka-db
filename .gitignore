@@ -53,3 +53,7 @@ test-results/
 
 # Rust
 Cargo.lock.orig
+
+# Semantic-search model — fetched by scripts/fetch-semantic-model.mjs, 118MB,
+# pinned by sha256 in the script; never committed.
+apps/desktop/src-tauri/resources/semantic/

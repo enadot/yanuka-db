@@ -86,6 +86,17 @@ Scoring terms independently and unioning would make a two-word search return
 *more* rows than the one-word search it refines — the opposite of what typing
 another word means.
 
+**4. Semantic** (desktop only, ADR-036). A local embedding model
+(multilingual-e5-small, int8 ONNX, bundled — nothing leaves the machine)
+matches the *meaning* of a query against every note and contact profile:
+`עסקן מאנגליה שעוזר עם בתי כנסת` finds the note that says
+`יהודי מלונדון… יכול לסייע בבניית בתי כנסת` with no word in common. Gated
+like fuzzy — a multi-word query, or a lexical search that came back thin —
+and additive only: it proposes contacts the lexical layers missed, never
+re-ranks one they found, and its score ceiling sits below a direct name hit.
+A semantic hit carries the matching note as its snippet, labeled
+`לפי משמעות`. When the model is missing the layer silently does not exist.
+
 ## Phonetic keys
 
 For names only, and only to retrieve candidates — never as a match on their own.
@@ -181,8 +192,6 @@ debounce so a search is issued per word, not per keystroke.
 - **Matres lectionis folding at the index level.** `דן`/`דין` and `רב`/`ריב` are
   different words. Handled by the fuzzy layer at edit distance 1 instead, with a
   score discount.
-- **Local semantic search.** Needs an embedding model with real Hebrew quality
-  and a vector index; the architecture does not block it. No contact data may go
-  to an external AI service.
-- **Natural-language queries** (`מי יש לנו בלונדון שקשור לחינוך`). The structured
-  fields exist precisely so this is answerable later without a text-mining pass.
+- **Natural-language queries** (`מי יש לנו בלונדון שקשור לחינוך`). The semantic
+  layer (ADR-036) now answers the free-text half of this; the structured fields
+  remain available for a filter-parsing pass later.

@@ -24,6 +24,13 @@ rusqlite = { version = "0.37", features = ["bundled", "functions", "backup", "se
 ulid = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 
+# Semantic search (ADR-036): ONNX Runtime executes the bundled sentence
+# embedding model; `tokenizers` is Hugging Face's pure-Rust tokenizer. Both
+# sit behind the `semantic` feature so the default `cargo test` stays light —
+# the desktop build enables it, mirroring how `sqlcipher` is wired.
+ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "download-binaries", "tls-rustls", "copy-dylibs", "api-27"] }
+tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig"] }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -31,3 +38,4 @@ tempfile = "3"
 default = []
 # Not enabled yet; the deferral and its cost are recorded in DECISIONS.md.
 sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
+semantic = ["dep:ort", "dep:tokenizers"]

@@ -14,11 +14,18 @@ pub struct Migration {
     pub sql: &'static str,
 }
 
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "0001_initial_schema",
-    sql: include_str!("../../../packages/database/migrations/sqlite/0001_initial_schema.sql"),
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "0001_initial_schema",
+        sql: include_str!("../../../packages/database/migrations/sqlite/0001_initial_schema.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "0002_semantic_index",
+        sql: include_str!("../../../packages/database/migrations/sqlite/0002_semantic_index.sql"),
+    },
+];
 
 /// Highest schema version this build can produce.
 pub fn target_version() -> i64 {

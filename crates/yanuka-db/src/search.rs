@@ -8,6 +8,10 @@
 //! 2. **Full text** — FTS5 over the pre-normalized document, ordered by bm25.
 //! 3. **Fuzzy** — only when the first two return almost nothing. Trigram
 //!    overlap proposes candidates, edit distance ranks them.
+//! 4. **Semantic** — the embedding model, when the shell provides one, adds
+//!    contacts whose notes *mean* what the query asks even though no word
+//!    matches. Additive only: it proposes contacts the lexical layers missed
+//!    and never re-ranks one they found. See ADR-036.
 //!
 //! Facets are computed in the same pass over the candidate set, so the result
 //! count, the rows and the filter counts are one round trip rather than three.
@@ -72,7 +76,33 @@ struct Candidate {
     reasons: Vec<MatchReason>,
 }
 
+/// The engine handle the semantic layer runs with; `()` when the feature is
+/// compiled out, so `run` keeps one signature either way.
+#[cfg(feature = "semantic")]
+type SemanticRef<'a> = Option<&'a crate::semantic::SemanticEngine>;
+#[cfg(not(feature = "semantic"))]
+type SemanticRef<'a> = Option<&'a ()>;
+
 pub fn search(connection: &Connection, query: &SearchQuery) -> Result<SearchResponse> {
+    run(connection, query, None)
+}
+
+/// Search with the semantic layer active. The desktop shell calls this; every
+/// other caller (tests, tools) uses `search` and gets the lexical layers.
+#[cfg(feature = "semantic")]
+pub fn search_with_semantic(
+    connection: &Connection,
+    engine: Option<&crate::semantic::SemanticEngine>,
+    query: &SearchQuery,
+) -> Result<SearchResponse> {
+    run(connection, query, engine)
+}
+
+fn run(
+    connection: &Connection,
+    query: &SearchQuery,
+    semantic: SemanticRef<'_>,
+) -> Result<SearchResponse> {
     let started = Instant::now();
 
     let normalized = strip_honorifics(&normalize_text(&query.text));
@@ -96,6 +126,41 @@ pub fn search(connection: &Connection, query: &SearchQuery) -> Result<SearchResp
         }
         found
     };
+
+    // Layer 4: meaning. Gated like fuzzy — a sentence-shaped query, or a
+    // lexical search that came back thin, is where the model earns its keep;
+    // a surname being typed letter by letter is not. Engine failures degrade
+    // to the lexical answer silently: search must never break because a model
+    // file is missing or corrupt.
+    #[cfg(feature = "semantic")]
+    if let Some(engine) = semantic {
+        let wants_meaning = terms.len() >= 2 || candidates.len() < FUZZY_TRIGGER;
+        if !is_phone_query && !terms.is_empty() && wants_meaning {
+            let existing: std::collections::HashSet<String> =
+                candidates.iter().map(|c| c.contact_id.clone()).collect();
+            if let Ok(hits) =
+                crate::semantic::candidates(connection, engine, &query.text, &existing)
+            {
+                candidates.extend(hits.into_iter().map(|hit| {
+                    let score = score_match(MatchSource::Semantic, MatchQuality::Semantic, 1.0)
+                        * crate::semantic::cosine_factor(hit.cosine);
+                    Candidate {
+                        contact_id: hit.contact_id,
+                        score,
+                        reasons: vec![MatchReason {
+                            source: "semantic".into(),
+                            quality: "semantic".into(),
+                            term: query.text.clone(),
+                            snippet: hit.snippet,
+                            score,
+                        }],
+                    }
+                }));
+            }
+        }
+    }
+    #[cfg(not(feature = "semantic"))]
+    let _ = semantic;
 
     candidates.retain(|candidate| passes_filters(connection, candidate, query).unwrap_or(false));
     candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));

@@ -239,6 +239,7 @@ export const IPC_COMMANDS = [
   'backup_database',
   'backup_status',
   'security_status',
+  'semantic_status',
   'recovery_key',
   'unlock_database',
   'save_exported_csv',

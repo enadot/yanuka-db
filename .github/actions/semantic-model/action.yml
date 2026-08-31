@@ -1,0 +1,18 @@
+name: Fetch the semantic model
+description: >
+  Download the pinned embedding model (ADR-036) into
+  apps/desktop/src-tauri/resources/semantic, with a cache so the 118MB file is
+  fetched from Hugging Face only when the pin changes. The pinned revision and
+  sha256 digests live in scripts/fetch-semantic-model.mjs — the cache key hashes
+  that script, so bumping the pin invalidates the cache by itself.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: apps/desktop/src-tauri/resources/semantic
+        key: semantic-model-${{ hashFiles('scripts/fetch-semantic-model.mjs') }}
+
+    - run: node scripts/fetch-semantic-model.mjs
+      shell: bash

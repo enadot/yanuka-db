@@ -16,11 +16,12 @@ export const MATCH_SOURCES = [
   'category',
   'notes',
   'reason_for_saving',
+  'semantic',
 ] as const;
 export type MatchSource = (typeof MATCH_SOURCES)[number];
 
 /** How the term was matched, which determines the score multiplier. */
-export const MATCH_QUALITIES = ['exact', 'prefix', 'fuzzy', 'fulltext'] as const;
+export const MATCH_QUALITIES = ['exact', 'prefix', 'fuzzy', 'fulltext', 'semantic'] as const;
 export type MatchQuality = (typeof MATCH_QUALITIES)[number];
 
 /**

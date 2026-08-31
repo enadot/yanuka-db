@@ -491,3 +491,57 @@ and Windows would list both. A `NSIS_HOOK_PREINSTALL` hook
 the data survives because of the identifier decision above. The hook is
 worth its weight exactly once — it stays until we are confident no machine
 still runs a pre-0.6.0 install.
+
+## ADR-036 — חיפוש סמנטי מקומי: multilingual-e5-small על ONNX Runtime
+
+The next stage after 0.6.x, chosen by the priority list: priority 3 ("החיפוש
+טוב יוצא דופן") names the one capability still missing — finding the note
+that says `יהודי מלונדון… יכול לסייע בבניית בתי כנסת` from the query
+`עסקן מאנגליה שעוזר עם בתי כנסת`, where FTS scores zero. Sync needs a server
+decision and OCR needs the user's scanned notebooks; semantic search needs
+neither, and it serves the product's single criterion directly.
+
+**Model.** Three candidates were evaluated on a 9-query Hebrew paraphrase set
+built from the product's own domain (recommendations, sofrim, community
+figures):
+
+| model | top-1 | top-3 | size | runtime |
+|---|---|---|---|---|
+| potion-multilingual-128M (static, MIT) | 6/9 | 7/9 | ~128MB int8 | pure Rust |
+| multilingual-e5-small fp32 (MIT) | 7/9 | 9/9 | 470MB | ONNX Runtime |
+| **multilingual-e5-small int8 (MIT)** | **8/9** | **9/9** | **118MB** | ONNX Runtime |
+
+The int8 quantization is the official one from the model's repository, pinned
+by revision and sha256 in `scripts/fetch-semantic-model.mjs`; it lost nothing
+measurable (it gained a case on this set) and embeds a text in ~5ms on CPU.
+ONNX Runtime is linked *statically* by `ort`'s pyke binaries — no DLL to
+ship — and the model rides in the installer as a Tauri resource (~120MB,
+the price of priority 2: no network, ever, including at first run).
+
+**Design.**
+- One vector per *document* — a contact's profile (the FTS fields composed as
+  readable text) or a single note — in `semantic_index`, inside the same
+  SQLCipher file, so vectors are encrypted and backed up with the data they
+  describe.
+- Maintained by *reconciliation*, not triggers: desired docs are derived from
+  the live tables and diffed against the index by content hash. The same
+  routine serves the post-mutation sync (one contact, inline, ~10ms), the
+  background catch-up on first launch (budgeted steps that yield the DB lock),
+  and a future model swap (the `model` column invalidates by comparison).
+  Global taxonomy edits (renaming a tag) leave stale profile vectors until the
+  next launch's catch-up — accepted, they still match *better* than before the
+  rename reached them.
+- Query side is layer 4 of search: additive only, gated like fuzzy, capped at
+  8 candidates above cosine 0.80, scored strictly below a direct lexical hit
+  (`semantic` weight 45 × 0.5), and each hit carries its matching note as the
+  snippet with the label "לפי משמעות".
+- Degradation is a state, not an error: no model file → search is exactly
+  what it was in 0.6.x and settings says so. The browser build reports
+  `browser`, mirroring encryption's pattern.
+
+**Rejected:** passing notes to a hosted embedding API (violates the no-network
+constraint and sends the archive's most sensitive text off the machine — not
+negotiable); a vector extension (brute force over a few thousand 384-float
+vectors is milliseconds; an ANN index is complexity without a customer);
+Google Sans-style dual sourcing of the model (one pinned artifact, verified
+by checksum, is the whole supply chain).

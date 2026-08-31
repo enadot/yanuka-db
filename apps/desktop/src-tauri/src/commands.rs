@@ -19,7 +19,8 @@ type Answer<T> = Result<T, DbError>;
 
 #[tauri::command]
 pub fn search_contacts(state: State<'_, AppState>, input: SearchQuery) -> Answer<SearchResponse> {
-    state.with(|connection| search::search(connection, &input))
+    let engine = state.semantic_engine();
+    state.with(|connection| search::search_with_semantic(connection, engine.as_deref(), &input))
 }
 
 /// Typeahead for the command palette.
@@ -97,7 +98,9 @@ pub fn create_contact(
     input: ContactInput,
     id: Option<String>,
 ) -> Answer<ContactWithRelations> {
-    state.with(|connection| repository::create_contact(connection, &input, id))
+    let created = state.with(|connection| repository::create_contact(connection, &input, id))?;
+    state.semantic_touch(&created.contact.id);
+    Ok(created)
 }
 
 /// Minimal add: name, one phone, one remark. Everything else can wait.
@@ -119,7 +122,9 @@ pub fn quick_add_contact(
         }
     }
 
-    state.with(|connection| repository::create_contact(connection, &contact, id))
+    let created = state.with(|connection| repository::create_contact(connection, &contact, id))?;
+    state.semantic_touch(&created.contact.id);
+    Ok(created)
 }
 
 #[tauri::command]
@@ -129,17 +134,24 @@ pub fn update_contact(
     patch: ContactInput,
     base_version: Option<i64>,
 ) -> Answer<ContactWithRelations> {
-    state.with(|connection| repository::update_contact(connection, &id, &patch, base_version))
+    let updated = state
+        .with(|connection| repository::update_contact(connection, &id, &patch, base_version))?;
+    state.semantic_touch(&id);
+    Ok(updated)
 }
 
 #[tauri::command]
 pub fn delete_contact(state: State<'_, AppState>, id: String) -> Answer<()> {
-    state.with(|connection| repository::delete_contact(connection, &id))
+    state.with(|connection| repository::delete_contact(connection, &id))?;
+    state.semantic_touch(&id);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn restore_contact(state: State<'_, AppState>, id: String) -> Answer<ContactWithRelations> {
-    state.with(|connection| repository::restore_contact(connection, &id))
+    let restored = state.with(|connection| repository::restore_contact(connection, &id))?;
+    state.semantic_touch(&id);
+    Ok(restored)
 }
 
 #[tauri::command]
@@ -253,7 +265,11 @@ pub fn merge_contacts(
     keep_id: String,
     merge_id: String,
 ) -> Answer<ContactWithRelations> {
-    state.with(|connection| yanuka_db::merge::merge_contacts(connection, &keep_id, &merge_id))
+    let merged = state
+        .with(|connection| yanuka_db::merge::merge_contacts(connection, &keep_id, &merge_id))?;
+    state.semantic_touch(&keep_id);
+    state.semantic_touch(&merge_id);
+    Ok(merged)
 }
 
 #[tauri::command]
@@ -348,7 +364,7 @@ pub fn add_note(state: State<'_, AppState>, input: Value) -> Answer<Value> {
     let body = input.get("body").and_then(Value::as_str).unwrap_or_default().to_string();
     let is_sensitive = input.get("isSensitive").and_then(Value::as_bool).unwrap_or(false);
 
-    state.with(|connection| {
+    let answer = state.with(|connection| {
         let id = taxonomy::add_note(connection, &contact_id, &body, is_sensitive)?;
         Ok(serde_json::json!({
             "id": id,
@@ -356,7 +372,9 @@ pub fn add_note(state: State<'_, AppState>, input: Value) -> Answer<Value> {
             "body": body,
             "isSensitive": is_sensitive,
         }))
-    })
+    })?;
+    state.semantic_touch(&contact_id);
+    Ok(answer)
 }
 
 #[tauri::command]
@@ -366,15 +384,41 @@ pub fn update_note(
     body: String,
     is_sensitive: Option<bool>,
 ) -> Answer<Value> {
-    state.with(|connection| {
+    let contact_id = state.with(|connection| {
+        let contact_id = note_contact(connection, &id)?;
         taxonomy::update_note(connection, &id, &body, is_sensitive)?;
-        Ok(serde_json::json!({ "id": id, "body": body }))
-    })
+        Ok(contact_id)
+    })?;
+    if let Some(contact_id) = contact_id {
+        state.semantic_touch(&contact_id);
+    }
+    Ok(serde_json::json!({ "id": id, "body": body }))
 }
 
 #[tauri::command]
 pub fn delete_note(state: State<'_, AppState>, id: String) -> Answer<()> {
-    state.with(|connection| taxonomy::delete_note(connection, &id))
+    let contact_id = state.with(|connection| {
+        let contact_id = note_contact(connection, &id)?;
+        taxonomy::delete_note(connection, &id)?;
+        Ok(contact_id)
+    })?;
+    if let Some(contact_id) = contact_id {
+        state.semantic_touch(&contact_id);
+    }
+    Ok(())
+}
+
+/// The contact a note belongs to, for the post-mutation semantic sync.
+fn note_contact(
+    connection: &yanuka_db::rusqlite::Connection,
+    note_id: &str,
+) -> Result<Option<String>, DbError> {
+    Ok(connection
+        .query_row("SELECT contact_id FROM notes WHERE id = ?1", [note_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map(Some)
+        .unwrap_or(None))
 }
 
 #[tauri::command]
@@ -432,6 +476,13 @@ pub fn security_status(state: State<'_, AppState>) -> Answer<Value> {
 /// The recovery key in display form. Shown in settings behind a click, so it
 /// can be written down and kept off the machine — the only thing that opens
 /// the database and its backups if Windows is ever reinstalled.
+/// Semantic search state for the settings screen: `unavailable` (no model),
+/// `indexing` (catch-up in progress, with counters), or `ready`.
+#[tauri::command]
+pub fn semantic_status(state: State<'_, AppState>) -> Answer<Value> {
+    Ok(state.semantic_status())
+}
+
 #[tauri::command]
 pub fn recovery_key(state: State<'_, AppState>) -> Answer<Value> {
     Ok(serde_json::json!({ "key": state.recovery_key() }))

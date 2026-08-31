@@ -24,6 +24,9 @@ pub enum MatchSource {
     Country,
     Notes,
     ReasonForSaving,
+    /// The embedding model matched the *meaning* of a note or profile rather
+    /// than any of its words. See ADR-036.
+    Semantic,
 }
 
 /// How well the term matched, which sets the multiplier.
@@ -34,6 +37,7 @@ pub enum MatchQuality {
     Prefix,
     Fulltext,
     Fuzzy,
+    Semantic,
 }
 
 /// Field weights.
@@ -54,6 +58,9 @@ pub fn field_weight(source: MatchSource) -> f64 {
         MatchSource::ReasonForSaving => 25.0,
         MatchSource::Country => 20.0,
         MatchSource::Notes => 20.0,
+        // Semantic hits rescue a query no word matched; they slot below every
+        // direct lexical hit so meaning never outranks the literal answer.
+        MatchSource::Semantic => 45.0,
     }
 }
 
@@ -63,6 +70,7 @@ pub fn quality_multiplier(quality: MatchQuality) -> f64 {
         MatchQuality::Prefix => 0.8,
         MatchQuality::Fulltext => 0.55,
         MatchQuality::Fuzzy => 0.45,
+        MatchQuality::Semantic => 0.5,
     }
 }
 

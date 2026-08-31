@@ -24,6 +24,9 @@ export const FIELD_WEIGHTS: Record<MatchSource, number> = {
   role: 30,
   notes: 20,
   reason_for_saving: 25,
+  // Semantic hits rescue a query no word matched; they slot below every
+  // direct lexical hit so meaning never outranks the literal answer.
+  semantic: 45,
 };
 
 /**
@@ -38,6 +41,7 @@ export const QUALITY_MULTIPLIERS: Record<MatchQuality, number> = {
   prefix: 0.8,
   fulltext: 0.55,
   fuzzy: 0.45,
+  semantic: 0.5,
 };
 
 /** Small additive nudges applied once per contact, not per match. */

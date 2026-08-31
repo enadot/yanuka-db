@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # `sqlcipher` swaps rusqlite's bundled SQLite for bundled SQLCipher with a
 # vendored OpenSSL — encryption at rest, ADR-033. The shipped desktop always
 # builds with it; the cost is compile time, not a runtime dependency.
-yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher"] }
+yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher", "semantic"] }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

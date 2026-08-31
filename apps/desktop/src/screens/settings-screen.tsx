@@ -7,6 +7,7 @@ import {
   KeyRound,
   ShieldCheck,
   ShieldOff,
+  Sparkles,
   Tags,
   Trash2,
 } from 'lucide-react';
@@ -33,8 +34,10 @@ import {
   exportContactsCsv,
   recoveryKey,
   securityStatus,
+  semanticStatus,
   type BackupStatus,
   type SecurityStatus,
+  type SemanticStatus,
 } from '../lib/desktop-io';
 import { useRepository } from '../lib/repository';
 import { useIsLocalDatabase } from '../lib/repository';
@@ -57,12 +60,24 @@ export function SettingsScreen() {
   const [busy, setBusy] = useState<'backup' | 'export' | null>(null);
 
   const [security, setSecurity] = useState<SecurityStatus | null>(null);
+  const [semantic, setSemantic] = useState<SemanticStatus | null>(null);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
 
   useEffect(() => {
     void backupStatus().then(setBackup);
     void securityStatus().then(setSecurity);
+    void semanticStatus().then(setSemantic);
   }, []);
+
+  // While the background indexer works through the archive, keep the counter
+  // honest without asking the user to refresh.
+  useEffect(() => {
+    if (semantic?.state !== 'indexing') {
+      return;
+    }
+    const timer = setTimeout(() => void semanticStatus().then(setSemantic), 2000);
+    return () => clearTimeout(timer);
+  }, [semantic]);
 
   const revealRecoveryKey = async () => {
     try {
@@ -301,6 +316,39 @@ export function SettingsScreen() {
             <p className="text-sm text-muted-foreground" data-testid="security-state">
               הצפנת המאגר פעילה באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה בזיכרון,
               ואין קובץ שדורש הצפנה.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="size-4" aria-hidden />
+            חיפוש לפי משמעות
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {semantic?.state === 'ready' ? (
+            <p className="text-sm text-muted-foreground" data-testid="semantic-state">
+              פעיל. החיפוש מבין גם ניסוח חופשי — "עסקן מלונדון שעוזר עם בתי כנסת"
+              ימצא את ההערה גם כשאף מילה לא זהה. הכול מחושב במחשב הזה, ללא
+              אינטרנט. {semantic.indexed > 0 ? `${semantic.indexed} מסמכים באינדקס.` : ''}
+            </p>
+          ) : semantic?.state === 'indexing' ? (
+            <p className="text-sm text-muted-foreground" data-testid="semantic-state">
+              בונה את אינדקס המשמעות ברקע — נותרו {semantic.pending} מסמכים. אפשר
+              להמשיך לעבוד כרגיל; החיפוש ישתפר ככל שהאינדקס מתקדם.
+            </p>
+          ) : semantic?.state === 'unavailable' ? (
+            <p className="text-sm text-muted-foreground" data-testid="semantic-state">
+              מודל השפה אינו זמין בהתקנה הזו; החיפוש הרגיל עובד כרגיל. התקנה מחדש
+              מהגרסה העדכנית תחזיר את היכולת.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground" data-testid="semantic-state">
+              חיפוש לפי משמעות פעיל באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה
+              והחיפוש הרגיל בלבד.
             </p>
           )}
         </CardContent>

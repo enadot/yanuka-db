@@ -176,5 +176,6 @@ with a recovery key instead of a passphrase — ADR-033).
 
 Designed and deliberately deferred, each with its cost recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, OCR import, local semantic search, and the
-web and Android clients.
+enforcement, OCR import, and the web and Android clients. Local semantic
+search shipped in 0.7.0 (ADR-036): a bundled multilingual embedding model
+answers meaning-shaped queries entirely on the machine.

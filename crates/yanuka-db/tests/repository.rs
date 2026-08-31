@@ -20,7 +20,7 @@ fn contact(display_name: &str) -> ContactInput {
 #[test]
 fn migrations_apply_and_are_idempotent() {
     let mut connection = open_in_memory().unwrap();
-    assert_eq!(migrate(&mut connection).unwrap(), 1);
+    assert_eq!(migrate(&mut connection).unwrap(), yanuka_db::migrate::MIGRATIONS.len());
     assert_eq!(migrate(&mut connection).unwrap(), 0);
     assert_eq!(yanuka_db::current_version(&connection).unwrap(), yanuka_db::target_version());
 }

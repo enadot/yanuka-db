@@ -20,6 +20,8 @@ pub mod models;
 pub mod mutation;
 pub mod repository;
 pub mod search;
+#[cfg(feature = "semantic")]
+pub mod semantic;
 pub mod taxonomy;
 
 pub use connection::{open, open_in_memory, sqlite_version};

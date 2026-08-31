@@ -35,4 +35,7 @@ test('settings reports the security posture honestly in the browser build', asyn
   // the Rust tests — this asserts the state routing reaches the screen.
   await page.goto('/#/settings');
   await expect(page.getByTestId('security-state')).toContainText('באפליקציית המחשב');
+  // Same routing assertion for the semantic-search card: the browser build has
+  // no embedding model, and the card must say so rather than show a spinner.
+  await expect(page.getByTestId('semantic-state')).toContainText('באפליקציית המחשב');
 });

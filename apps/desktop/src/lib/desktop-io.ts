@@ -38,6 +38,23 @@ export async function securityStatus(): Promise<SecurityStatus> {
   return (await invoke('security_status')) as SecurityStatus;
 }
 
+/**
+ * Semantic search runs on the desktop's bundled embedding model; the browser
+ * build has no model and reports itself as such.
+ */
+export interface SemanticStatus {
+  state: 'ready' | 'indexing' | 'unavailable' | 'browser';
+  indexed: number;
+  pending: number;
+}
+
+export async function semanticStatus(): Promise<SemanticStatus> {
+  if (!isTauri()) {
+    return { state: 'browser', indexed: 0, pending: 0 };
+  }
+  return (await invoke('semantic_status')) as SemanticStatus;
+}
+
 /** The recovery key in display form, or null when the database is not encrypted. */
 export async function recoveryKey(): Promise<string | null> {
   if (!isTauri()) {

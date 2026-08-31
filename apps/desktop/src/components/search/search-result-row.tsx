@@ -20,6 +20,7 @@ const SOURCE_LABELS: Record<string, string> = {
   category: 'קטגוריה',
   notes: 'הערה',
   reason_for_saving: 'סיבת שמירה',
+  semantic: 'לפי משמעות',
 };
 
 export interface SearchResultRowProps {

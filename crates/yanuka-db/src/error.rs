@@ -42,6 +42,12 @@ pub enum DbError {
     /// supplies the recovery key. See docs/SECURITY.md.
     #[error("המאגר מוצפן ונעול — נדרש מפתח שחזור")]
     Locked,
+
+    /// The embedding model failed to load or run. Never shown to the user in
+    /// the search flow — semantic search degrades to the lexical layers — but
+    /// the settings screen surfaces the state. See ADR-036.
+    #[error("שגיאת מנוע סמנטי: {0}")]
+    Semantic(String),
 }
 
 /// Wire form of an error, matching what `toRepositoryError` expects on the
@@ -60,9 +66,10 @@ impl DbError {
             DbError::Validation(_) => "validation",
             DbError::StaleVersion { .. } => "stale_version",
             DbError::Duplicate => "duplicate",
-            DbError::MissingCapability(_) | DbError::MigrationChanged(_) | DbError::Locked => {
-                "unavailable"
-            }
+            DbError::MissingCapability(_)
+            | DbError::MigrationChanged(_)
+            | DbError::Locked
+            | DbError::Semantic(_) => "unavailable",
             DbError::Sqlite(_) | DbError::Serde(_) => "database",
         }
     }

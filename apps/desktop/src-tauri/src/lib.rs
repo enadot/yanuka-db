@@ -51,6 +51,57 @@ pub fn run() {
                 Ok(())
             });
             app.manage(state);
+
+            // Semantic search (ADR-036). The model ships as a bundled
+            // resource; when it is absent — a dev run without the fetch
+            // script — everything else works and settings says so. After a
+            // successful load, a background task reconciles the semantic
+            // index in small budgeted steps so the first launch after an
+            // upgrade indexes the whole archive without ever holding the
+            // database lock long enough for the UI to notice.
+            let resources =
+                app.path().resolve("resources/semantic", tauri::path::BaseDirectory::Resource);
+            if let Ok(directory) = resources {
+                match yanuka_db::semantic::SemanticEngine::load(
+                    &directory.join("model.onnx"),
+                    &directory.join("tokenizer.json"),
+                ) {
+                    Ok(engine) => {
+                        let state = app.state::<AppState>();
+                        state.attach_semantic(engine);
+                        let handle = app.handle().clone();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            let state = handle.state::<AppState>();
+                            let Some(engine) = state.semantic_engine() else { return };
+                            let mut indexed = 0usize;
+                            loop {
+                                let step = state.with(|connection| {
+                                    yanuka_db::semantic::sync_step(connection, &engine, 12)
+                                });
+                                match step {
+                                    Ok(outcome) => {
+                                        indexed += outcome.embedded;
+                                        state.set_semantic_progress(
+                                            indexed,
+                                            outcome.pending,
+                                            outcome.pending > 0,
+                                        );
+                                        if outcome.pending == 0 {
+                                            break;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        eprintln!("semantic catch-up stopped: {error}");
+                                        state.set_semantic_progress(indexed, 0, false);
+                                        break;
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    Err(error) => eprintln!("semantic engine unavailable: {error}"),
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -89,6 +140,7 @@ pub fn run() {
             commands::backup_database,
             commands::backup_status,
             commands::security_status,
+            commands::semantic_status,
             commands::recovery_key,
             commands::unlock_database,
             commands::save_exported_csv,
