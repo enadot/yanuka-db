@@ -61,9 +61,11 @@ jobs:
       # with — this is also the only place the encryption tests run (ADR-033).
       - run: cargo test -p yanuka-db --features sqlcipher
       # And the semantic suite, against the real embedding model (ADR-036).
+      # The path must be absolute: cargo runs test binaries with the crate
+      # directory as their working directory, not the workspace root.
       - run: cargo test -p yanuka-db --features semantic
         env:
-          YANUKA_SEMANTIC_MODEL_DIR: apps/desktop/src-tauri/resources/semantic
+          YANUKA_SEMANTIC_MODEL_DIR: ${{ github.workspace }}/apps/desktop/src-tauri/resources/semantic
 
   # The one thing the development container cannot do: prove the Tauri shell
   # still compiles. Catches a broken command signature before the slow Windows
@@ -83,6 +85,11 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      # tauri-build validates `bundle.resources` at compile time, so even a
+      # `cargo check` needs the model files present.
+      - name: Fetch the semantic model
+        uses: ./.github/actions/semantic-model
 
       - run: cargo check -p yanuka-desktop
 
