@@ -18,6 +18,8 @@ pub mod merge;
 pub mod migrate;
 pub mod models;
 pub mod mutation;
+#[cfg(feature = "ocr")]
+pub mod ocr;
 pub mod repository;
 pub mod search;
 #[cfg(feature = "semantic")]

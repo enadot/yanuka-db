@@ -545,3 +545,45 @@ negotiable); a vector extension (brute force over a few thousand 384-float
 vectors is milliseconds; an ANN index is complexity without a customer);
 Google Sans-style dual sourcing of the model (one pinned artifact, verified
 by checksum, is the whole supply chain).
+
+## ADR-037 — ייבוא מחברות: זיכרון כתב־יד לומד, לא מודל מוכן
+
+The archive's origin is handwritten notebooks, and the user asked for OCR
+that *learns the writer's difficult hand over time*. A survey of open
+Hebrew handwriting models found nothing shippable — a handful of
+experimental fine-tunes with double-digit downloads, several marked
+untrained/synthetic, and multi-GB VLM adaptations unusable on an old
+offline Windows machine. Cloud OCR is excluded outright: the notebooks are
+the most sensitive artifact this product touches.
+
+So recognition is not a pretrained model but a **memory of this writer**:
+
+- Segmentation is classical and transparent — Otsu binarization, projection
+  profiles for line bands, gap analysis for word boxes, right-to-left. Its
+  failure mode (a merged or split box) is visible in the workbench, not
+  silently wrong.
+- Every word the user transcribes is stored as (shape descriptor → text) in
+  `ocr_corrections`. The descriptor is a 48×16 ink-density grid over the
+  tight-trimmed word, L2-normalized; matching is cosine. One writer shapes
+  one word consistently, and notebook vocabulary repeats — so a word
+  corrected once auto-fills on the same page immediately and on every page
+  imported after, marked "זוהה מהכתב" (threshold 0.92: a wrong auto-fill
+  costs trust, an empty box costs keystrokes).
+- The archive doubles as the lexicon: autocomplete offers names, cities,
+  professions and previously corrected words while typing.
+- A transcribed page becomes a normal note (journaled, FTS-indexed,
+  semantically embedded) on the contact the user chooses; the scan itself
+  lives as a BLOB *inside* the encrypted database, so pages are protected
+  and backed up with the data they belong to.
+
+Two hard-won pixels: Otsu's threshold lands *on* the dark class in a clean
+scan, so the ink test is `<=`, not `<`; and a word's descriptor must be
+trimmed against a padded window rather than its line band, because band
+height is a property of the whole line — the same word on two lines was
+clipped differently and read as two shapes.
+
+The corrections table is also a growing labeled dataset of exactly this
+hand. When it is large enough, fine-tuning a small HTR model *on this
+machine* becomes the natural next iteration — the workbench then starts
+from that model's proposals instead of empty boxes, with the same
+correction loop on top.

@@ -510,3 +510,73 @@ pub fn save_exported_csv(path: String, contents: String) -> Answer<String> {
         .map_err(|error| DbError::Validation(format!("שמירת הקובץ נכשלה: {error}")))?;
     Ok(path)
 }
+
+// ---------------------------------------------------------------------------
+// Notebook import (ADR-037).
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn ocr_import_page(
+    state: State<'_, AppState>,
+    file_name: String,
+    data_base64: String,
+) -> Answer<Value> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|_| DbError::Validation("קובץ התמונה לא הגיע תקין".into()))?;
+    let id =
+        state.with(|connection| yanuka_db::ocr::import_page(connection, &bytes, &file_name))?;
+    Ok(serde_json::json!({ "id": id }))
+}
+
+#[tauri::command]
+pub fn ocr_list_pages(state: State<'_, AppState>) -> Answer<Vec<yanuka_db::ocr::PageSummary>> {
+    state.with(|connection| yanuka_db::ocr::list_pages(connection))
+}
+
+#[tauri::command]
+pub fn ocr_get_page(state: State<'_, AppState>, id: String) -> Answer<yanuka_db::ocr::PageDetail> {
+    state.with(|connection| yanuka_db::ocr::get_page(connection, &id))
+}
+
+/// Record a correction and return the page's tokens — the learning may have
+/// just filled other boxes, and the workbench wants to show that immediately.
+#[tauri::command]
+pub fn ocr_set_token_text(
+    state: State<'_, AppState>,
+    token_id: String,
+    text: String,
+) -> Answer<Vec<yanuka_db::ocr::Token>> {
+    state.with(|connection| {
+        yanuka_db::ocr::record_correction(connection, &token_id, &text)?;
+        let page_id: String = connection.query_row(
+            "SELECT page_id FROM ocr_tokens WHERE id = ?1",
+            [&token_id],
+            |row| row.get(0),
+        )?;
+        Ok(yanuka_db::ocr::get_page(connection, &page_id)?.tokens)
+    })
+}
+
+#[tauri::command]
+pub fn ocr_lexicon(state: State<'_, AppState>, prefix: String) -> Answer<Vec<String>> {
+    state.with(|connection| yanuka_db::ocr::lexicon(connection, &prefix, 8))
+}
+
+#[tauri::command]
+pub fn ocr_save_note(
+    state: State<'_, AppState>,
+    page_id: String,
+    contact_id: String,
+) -> Answer<Value> {
+    let note_id =
+        state.with(|connection| yanuka_db::ocr::save_as_note(connection, &page_id, &contact_id))?;
+    state.semantic_touch(&contact_id);
+    Ok(serde_json::json!({ "noteId": note_id }))
+}
+
+#[tauri::command]
+pub fn ocr_delete_page(state: State<'_, AppState>, id: String) -> Answer<()> {
+    state.with(|connection| yanuka_db::ocr::delete_page(connection, &id))
+}

@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Plus, Search, Settings, Users } from 'lucide-react';
+import { Home, NotebookPen, Plus, Search, Settings, Users } from 'lucide-react';
 import { Button, Separator, cn } from '@yanuka/ui';
 import { useCommandHotkey } from '../../hooks/use-hotkey';
 import { GlobalSearchDialog } from '../search/global-search-dialog';
@@ -10,6 +10,7 @@ import { SyncIndicator } from './sync-indicator';
 const NAV_ITEMS = [
   { to: '/', label: 'חיפוש', icon: Home, end: true },
   { to: '/contacts', label: 'אנשי קשר', icon: Users, end: false },
+  { to: '/notebooks', label: 'מחברות', icon: NotebookPen, end: false },
   { to: '/settings', label: 'הגדרות', icon: Settings, end: false },
 ] as const;
 

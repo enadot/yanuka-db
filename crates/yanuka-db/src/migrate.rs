@@ -25,6 +25,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0002_semantic_index",
         sql: include_str!("../../../packages/database/migrations/sqlite/0002_semantic_index.sql"),
     },
+    Migration {
+        version: 3,
+        name: "0003_ocr_notebooks",
+        sql: include_str!("../../../packages/database/migrations/sqlite/0003_ocr_notebooks.sql"),
+    },
 ];
 
 /// Highest schema version this build can produce.

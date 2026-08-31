@@ -7,6 +7,8 @@ import { ContactDetailScreen } from './screens/contact-detail-screen';
 import { ContactEditScreen } from './screens/contact-edit-screen';
 import { SettingsScreen } from './screens/settings-screen';
 import { ImportScreen } from './screens/import-screen';
+import { NotebooksScreen } from './screens/notebooks-screen';
+import { NotebookPageScreen } from './screens/notebook-page-screen';
 import { DuplicatesScreen } from './screens/duplicates-screen';
 import { TrashScreen } from './screens/trash-screen';
 import { UnlockScreen } from './screens/unlock-screen';
@@ -36,6 +38,8 @@ export function App() {
         <Route path="contacts/:id/edit" element={<ContactEditScreen mode="edit" />} />
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="import" element={<ImportScreen />} />
+        <Route path="notebooks" element={<NotebooksScreen />} />
+        <Route path="notebooks/:id" element={<NotebookPageScreen />} />
         <Route path="duplicates" element={<DuplicatesScreen />} />
         <Route path="trash" element={<TrashScreen />} />
       </Route>

@@ -242,6 +242,13 @@ export const IPC_COMMANDS = [
   'semantic_status',
   'recovery_key',
   'unlock_database',
+  'ocr_import_page',
+  'ocr_list_pages',
+  'ocr_get_page',
+  'ocr_set_token_text',
+  'ocr_lexicon',
+  'ocr_save_note',
+  'ocr_delete_page',
   'save_exported_csv',
   'audit_log',
 ] as const;

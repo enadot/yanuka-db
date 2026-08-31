@@ -145,6 +145,13 @@ pub fn run() {
             commands::unlock_database,
             commands::save_exported_csv,
             commands::audit_log,
+            commands::ocr_import_page,
+            commands::ocr_list_pages,
+            commands::ocr_get_page,
+            commands::ocr_set_token_text,
+            commands::ocr_lexicon,
+            commands::ocr_save_note,
+            commands::ocr_delete_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");

@@ -56,10 +56,14 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy -p yanuka-db -p yanuka-search --all-targets -- -D warnings
       - run: cargo clippy -p yanuka-db --features semantic --all-targets -- -D warnings
+      - run: cargo clippy -p yanuka-db --features ocr --all-targets -- -D warnings
       - run: cargo test -p yanuka-db -p yanuka-search
       # The storage suite again, under the SQLCipher build the desktop ships
       # with — this is also the only place the encryption tests run (ADR-033).
       - run: cargo test -p yanuka-db --features sqlcipher
+      # The notebook-import suite: segmentation and the writer memory
+      # (ADR-037) — pure Rust, no model to fetch.
+      - run: cargo test -p yanuka-db --features ocr
       # And the semantic suite, against the real embedding model (ADR-036).
       # The path must be absolute: cargo runs test binaries with the crate
       # directory as their working directory, not the workspace root.

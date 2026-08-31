@@ -155,3 +155,151 @@ export async function exportContactsCsv(
   URL.revokeObjectURL(url);
   return fileName;
 }
+
+// ---------------------------------------------------------------------------
+// Notebook import (ADR-037).
+//
+// Desktop-only capability, like backups and encryption: the segmentation and
+// the writer memory live in Rust. The browser build serves one demo page with
+// simulated learning, so the workbench is fully exercisable in e2e.
+// ---------------------------------------------------------------------------
+
+export interface OcrToken {
+  id: string;
+  lineIndex: number;
+  tokenIndex: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  text: string | null;
+  source: 'none' | 'learned' | 'manual';
+  confidence: number | null;
+}
+
+export interface OcrPageSummary {
+  id: string;
+  fileName: string;
+  status: string;
+  contactId: string | null;
+  width: number;
+  height: number;
+  tokens: number;
+  filled: number;
+  importedAt: string;
+}
+
+export interface OcrPageDetail {
+  id: string;
+  fileName: string;
+  status: string;
+  contactId: string | null;
+  width: number;
+  height: number;
+  imageDataUrl: string;
+  tokens: OcrToken[];
+}
+
+export function ocrAvailable(): boolean {
+  return isTauri();
+}
+
+/** Demo state for the browser build: one page, two lines, one repeated shape. */
+const demoTokens: OcrToken[] = [
+  { id: 'demo-1', lineIndex: 0, tokenIndex: 0, x: 480, y: 30, w: 120, h: 40, text: null, source: 'none', confidence: null },
+  { id: 'demo-2', lineIndex: 0, tokenIndex: 1, x: 320, y: 30, w: 120, h: 40, text: null, source: 'none', confidence: null },
+  { id: 'demo-3', lineIndex: 1, tokenIndex: 0, x: 480, y: 110, w: 120, h: 40, text: null, source: 'none', confidence: null },
+];
+// demo-1 and demo-3 are "the same shape" — correcting one teaches the other.
+const demoTwins: Record<string, string> = { 'demo-1': 'demo-3', 'demo-3': 'demo-1' };
+
+function demoImage(): string {
+  const boxes = demoTokens
+    .map((t) => `<rect x="${t.x}" y="${t.y}" width="${t.w}" height="${t.h}" fill="#cbd5e1"/>`)
+    .join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="200"><rect width="640" height="200" fill="#f8fafc"/>${boxes}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+export async function ocrImportPage(fileName: string, dataBase64: string): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('ייבוא מחברות זמין באפליקציית המחשב');
+  }
+  const result = (await invoke('ocr_import_page', { fileName, dataBase64 })) as { id: string };
+  return result.id;
+}
+
+export async function ocrListPages(): Promise<OcrPageSummary[]> {
+  if (!isTauri()) {
+    return [
+      {
+        id: 'demo-page',
+        fileName: 'מחברת-הדגמה.png',
+        status: 'new',
+        contactId: null,
+        width: 640,
+        height: 200,
+        tokens: demoTokens.length,
+        filled: demoTokens.filter((t) => t.text).length,
+        importedAt: new Date().toISOString(),
+      },
+    ];
+  }
+  return (await invoke('ocr_list_pages')) as OcrPageSummary[];
+}
+
+export async function ocrGetPage(id: string): Promise<OcrPageDetail> {
+  if (!isTauri()) {
+    return {
+      id: 'demo-page',
+      fileName: 'מחברת-הדגמה.png',
+      status: 'new',
+      contactId: null,
+      width: 640,
+      height: 200,
+      imageDataUrl: demoImage(),
+      tokens: demoTokens.map((t) => ({ ...t })),
+    };
+  }
+  return (await invoke('ocr_get_page', { id })) as OcrPageDetail;
+}
+
+export async function ocrSetTokenText(tokenId: string, text: string): Promise<OcrToken[]> {
+  if (!isTauri()) {
+    const token = demoTokens.find((t) => t.id === tokenId);
+    if (token) {
+      token.text = text.trim() || null;
+      token.source = token.text ? 'manual' : 'none';
+      const twin = demoTokens.find((t) => t.id === demoTwins[tokenId]);
+      if (token.text && twin && twin.source !== 'manual') {
+        twin.text = token.text;
+        twin.source = 'learned';
+        twin.confidence = 0.97;
+      }
+    }
+    return demoTokens.map((t) => ({ ...t }));
+  }
+  return (await invoke('ocr_set_token_text', { tokenId, text })) as OcrToken[];
+}
+
+export async function ocrLexicon(prefix: string): Promise<string[]> {
+  if (!isTauri()) {
+    return prefix ? ['אברהם כהן', 'ירושלים'].filter((t) => t.startsWith(prefix)) : [];
+  }
+  return (await invoke('ocr_lexicon', { prefix })) as string[];
+}
+
+export async function ocrSaveNote(pageId: string, contactId: string): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('שמירת הערה מדף זמינה באפליקציית המחשב');
+  }
+  const result = (await invoke('ocr_save_note', { pageId, contactId })) as { noteId: string };
+  return result.noteId;
+}
+
+export async function ocrDeletePage(id: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke('ocr_delete_page', { id });
+}

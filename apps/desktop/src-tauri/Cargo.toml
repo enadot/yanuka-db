@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # `sqlcipher` swaps rusqlite's bundled SQLite for bundled SQLCipher with a
 # vendored OpenSSL — encryption at rest, ADR-033. The shipped desktop always
 # builds with it; the cost is compile time, not a runtime dependency.
-yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher", "semantic"] }
+yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher", "semantic", "ocr"] }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
@@ -31,6 +31,8 @@ serde_json = { workspace = true }
 keyring = { version = "3", features = ["windows-native"] }
 # Random 256-bit database key. `getrandom` is the OS entropy syscall, thin.
 getrandom = "0.3"
+# Notebook scans cross the IPC boundary as base64 strings.
+base64 = "0.22"
 
 [features]
 # Used by `tauri dev` to enable the custom protocol on desktop.

@@ -31,6 +31,11 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["std", "download-binaries", "tls-rustls", "copy-dylibs", "api-27"] }
 tokenizers = { version = "0.23", optional = true, default-features = false, features = ["onig"] }
 
+# Notebook import (ADR-037): pure-Rust image decoding for the scanned pages.
+# Only the formats scans actually arrive in — keeping the dependency light.
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
+base64 = { version = "0.22", optional = true }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -39,3 +44,4 @@ default = []
 # Not enabled yet; the deferral and its cost are recorded in DECISIONS.md.
 sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 semantic = ["dep:ort", "dep:tokenizers"]
+ocr = ["dep:image", "dep:base64"]
