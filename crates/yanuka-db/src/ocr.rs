@@ -295,7 +295,7 @@ fn segment(gray: &image::GrayImage) -> Vec<FoundBox> {
         }
 
         // Right to left: the first token the reader meets is the rightmost.
-        spans.sort_by(|a, b| b.0.cmp(&a.0));
+        spans.sort_by_key(|&(left, _)| std::cmp::Reverse(left));
 
         for (token_index, &(left, right)) in spans.iter().enumerate() {
             let w = (right - left) as u32;
