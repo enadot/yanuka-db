@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { SearchX, Star, Clock, Plus } from 'lucide-react';
+import { SearchX, Search, Star, Clock, Plus } from 'lucide-react';
 import type { FacetFilters } from '@yanuka/types';
 import { formatSubtitle, initials } from '@yanuka/core';
 import {
@@ -62,19 +62,26 @@ export function HomeScreen() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
-      <section className="space-y-3 pt-6 text-center">
-        <h1 className="text-2xl font-semibold">את מי מחפשים?</h1>
-        <Input
-          autoFocus
-          value={text}
-          onChange={(event) => updateText(event.target.value)}
-          placeholder="שם, מקום, מקצוע, מוסד, הערה או כל פרט שאתם זוכרים"
-          className="h-12 text-base"
-          aria-label="חיפוש אנשי קשר"
-        />
-        <p className="text-sm text-muted-foreground">
-          אפשר לחפש גם לפי משפט מתוך הערה, מי המליץ, או סיבה שבגללה שמרתם את האיש
-        </p>
+      <section className="space-y-4 pt-8 text-center">
+        <h1 className="text-4xl">את מי מחפשים?</h1>
+
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-1/2 size-6 -translate-y-1/2 text-muted-foreground"
+            style={{ insetInlineStart: '1rem' }}
+            aria-hidden
+          />
+          <Input
+            autoFocus
+            value={text}
+            onChange={(event) => updateText(event.target.value)}
+            placeholder="שם, מקום, מקצוע, מוסד או משפט מתוך הערה"
+            className="h-16 rounded-2xl border-2 text-xl font-medium shadow-sm ps-14"
+            aria-label="חיפוש אנשי קשר"
+          />
+        </div>
+
+        {hasQuery ? null : <ExampleQueries onPick={updateText} />}
       </section>
 
       {hasQuery ? (
@@ -176,6 +183,53 @@ function SearchResults({
   );
 }
 
+/**
+ * What you can type, as things you can press.
+ *
+ * A search box is only obvious to someone who already knows what the engine
+ * accepts. This one accepts a profession, a city, a misspelling, half a phone
+ * number or a sentence from a note written fifteen years ago — and none of that
+ * is discoverable from an empty rectangle with a placeholder. Someone who is
+ * not technical reads a blank box as "I must know the name", which is precisely
+ * the case this product exists to handle and the one where it looks broken.
+ *
+ * So the capability is shown instead of described, as real queries against the
+ * real data. Pressing one runs it, which also teaches the shape of the next one
+ * the user types themselves.
+ */
+function ExampleQueries({ onPick }: { onPick: (query: string) => void }) {
+  return (
+    <div className="space-y-2 pt-2">
+      <p className="text-sm font-medium text-muted-foreground">
+        לא זוכרים את השם? נסו לחפש לפי משהו אחר —
+      </p>
+      <div className="flex flex-wrap justify-center gap-2">
+        {EXAMPLE_QUERIES.map((example) => (
+          <Button
+            key={example.query}
+            type="button"
+            variant="outline"
+            className="h-auto gap-2 rounded-full px-4 py-2 font-medium"
+            onClick={() => onPick(example.query)}
+          >
+            <span className="text-base">{example.query}</span>
+            <span className="text-xs font-normal text-muted-foreground">{example.hint}</span>
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Drawn from the user stories in docs/PRODUCT.md, so each one really works. */
+const EXAMPLE_QUERIES = [
+  { query: 'סופר סת"ם', hint: 'לפי מקצוע' },
+  { query: 'ירושלים', hint: 'לפי עיר' },
+  { query: 'בורו פארק', hint: 'לפי מילה בהערה' },
+  { query: 'פרידמאן', hint: 'גם עם שגיאת כתיב' },
+  { query: '5550134', hint: 'רק סוף המספר' },
+];
+
 /** Favourites and recently opened, shown before anything is typed. */
 function StartingPoints() {
   const { data: favorites = [] } = useFavoriteContacts();
@@ -225,9 +279,7 @@ function ContactStrip({
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{contact.displayName}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {formatSubtitle(contact)}
-                </p>
+                <p className="truncate text-xs text-muted-foreground">{formatSubtitle(contact)}</p>
               </div>
             </Link>
           ))}

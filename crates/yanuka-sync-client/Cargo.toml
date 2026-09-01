@@ -1,0 +1,26 @@
+[package]
+name = "yanuka-sync-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+yanuka-db = { path = "../yanuka-db" }
+yanuka-sync-proto = { path = "../yanuka-sync-proto" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+base64 = "0.22"
+
+# rustls rather than the system TLS stack: Android has no OpenSSL to link
+# against, and the desktop should not depend on whatever Windows happens to
+# trust this month.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+axum = "0.8"
+sqlx = { version = "0.9", default-features = false, features = [
+  "runtime-tokio", "tls-rustls-ring", "postgres",
+] }
+yanuka-sync-server = { path = "../yanuka-sync-server" }

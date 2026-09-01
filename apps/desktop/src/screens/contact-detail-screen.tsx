@@ -10,7 +10,6 @@ import {
   Trash2,
   UserX,
 } from 'lucide-react';
-import { RELATIONSHIP_INVERSES, type RelationshipType } from '@yanuka/types';
 import { formatFullName, formatSubtitle, initials } from '@yanuka/core';
 import { countryName, formatDateTime, languageName, telHref, whatsappHref } from '@yanuka/utils';
 import {
@@ -41,20 +40,9 @@ import {
 } from '@yanuka/ui';
 import { toast } from 'sonner';
 import { useContact, useDeleteContact, useSetFavorite } from '../hooks/use-contacts';
+import { NoteComposer } from '../components/contact/note-composer';
+import { RelationshipEditor } from '../components/contact/relationship-editor';
 import { useRepository } from '../lib/repository';
-
-/** How each relationship reads when shown from this contact's side. */
-const RELATIONSHIP_LABELS: Record<RelationshipType, { out: string; in: string }> = {
-  recommended: { out: 'המליץ על', in: 'הומלץ על ידי' },
-  knows: { out: 'מכיר את', in: 'מוכר ל' },
-  related_to: { out: 'קשור ל', in: 'קשור ל' },
-  works_with: { out: 'עובד עם', in: 'עובד עם' },
-  family_of: { out: 'בן משפחה של', in: 'בן משפחה של' },
-  referred_us_to: { out: 'הפנה אותנו ל', in: 'הופנינו אליו על ידי' },
-  member_of: { out: 'שייך ל', in: 'כולל את' },
-  student_of: { out: 'תלמיד של', in: 'רבו של' },
-  teacher_of: { out: 'רבו של', in: 'תלמיד של' },
-};
 
 const PHONE_KIND_LABELS: Record<string, string> = {
   mobile: 'נייד',
@@ -115,8 +103,9 @@ export function ContactDetailScreen() {
 
   const remove = async () => {
     await deleteContact.mutateAsync(contact.id);
-    // Soft delete, so offering to undo is honest — the row is still there.
-    toast.success('איש הקשר הועבר לסל המחזור', {
+    // Soft delete, so offering to undo is honest — the row is still there, and
+    // once this toast fades it is still reachable at הגדרות ← סל המחזור.
+    toast.success('איש הקשר הועבר לסל המחזור — ניתן לשחזר משם בכל עת', {
       action: {
         label: 'ביטול',
         onClick: () => {
@@ -310,6 +299,8 @@ export function ContactDetailScreen() {
         </CardContent>
       </Card>
 
+      <NoteComposer contact={contact} />
+
       {contact.organizations.length > 0 ? (
         <Card>
           <CardHeader>
@@ -351,51 +342,11 @@ export function ContactDetailScreen() {
                 <p className="text-sm">{contact.reasonForSaving}</p>
               </div>
             ) : null}
-            {contact.contactNotes.map((note) => (
-              <div key={note.id} className="rounded-md border p-3">
-                <p className="whitespace-pre-wrap text-sm">{note.body}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {formatDateTime(note.createdAt)}
-                </p>
-              </div>
-            ))}
           </CardContent>
         </Card>
       ) : null}
 
-      {contact.relationships.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">קשרים</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {contact.relationships.map((edge) => {
-              // An edge is stored once, directed. Rendering it from the far end
-              // means reading it through the inverse type.
-              const type = edge.direction === 'out' ? edge.type : RELATIONSHIP_INVERSES[edge.type];
-              const label =
-                edge.direction === 'out'
-                  ? RELATIONSHIP_LABELS[edge.type].out
-                  : RELATIONSHIP_LABELS[type].in;
-
-              return (
-                <div key={`${edge.id}-${edge.direction}`} className="flex items-center gap-2 text-sm">
-                  <span className="text-muted-foreground">{label}</span>
-                  <Link
-                    to={`/contacts/${edge.otherContact.id}`}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    {edge.otherContact.displayName}
-                  </Link>
-                  {edge.notes ? (
-                    <span className="text-xs text-muted-foreground">— {edge.notes}</span>
-                  ) : null}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      ) : null}
+      <RelationshipEditor contact={contact} />
 
       <p className="text-xs text-muted-foreground">
         נוצר {formatDateTime(contact.createdAt)} · עודכן {formatDateTime(contact.updatedAt)} · גרסה{' '}

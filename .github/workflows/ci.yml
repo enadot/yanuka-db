@@ -40,8 +40,26 @@ jobs:
   # The storage and search crates carry no Tauri dependency, which is the whole
   # reason they can run here without apt-installing a webview.
   rust:
-    name: rust · storage and search
+    name: rust · storage, search and sync
     runs-on: ubuntu-latest
+
+    # The sync server's tests run against a real PostgreSQL rather than a mock.
+    # What is most likely to be wrong in a log server — sequence assignment
+    # under concurrent writers, uniqueness on retry, paging boundaries — is
+    # precisely what a mock cannot have.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: yanuka_sync_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -51,8 +69,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo fmt --all -- --check
-      - run: cargo clippy -p yanuka-db -p yanuka-search --all-targets -- -D warnings
-      - run: cargo test -p yanuka-db -p yanuka-search
+      - run: >-
+          cargo clippy -p yanuka-db -p yanuka-search
+          -p yanuka-sync-proto -p yanuka-sync-server -p yanuka-sync-client
+          --all-targets -- -D warnings
+      - run: cargo test -p yanuka-db -p yanuka-search -p yanuka-sync-proto
+      # These need the database. The client suite runs a real server on a real
+      # port and drives two real SQLite databases through it, which is the only
+      # place the three layers are proven to compose.
+      - run: cargo test -p yanuka-sync-server -p yanuka-sync-client
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/yanuka_sync_test
 
   # The one thing the development container cannot do: prove the Tauri shell
   # still compiles. Catches a broken command signature before the slow Windows
@@ -93,6 +120,8 @@ jobs:
       - run: pnpm build
       # Runs against the in-memory repository, so it exercises the real screens,
       # the real search engine and the real demo data without a Tauri shell.
+      # Both projects: a desktop viewport and a phone-sized one, the latter
+      # standing in for the Android webview on a runner with no emulator.
       - run: pnpm --filter @yanuka/desktop test:e2e
 
       - uses: actions/upload-artifact@v4
@@ -100,6 +129,50 @@ jobs:
         with:
           name: playwright-report
           path: apps/desktop/playwright-report
+          retention-days: 7
+
+  android:
+    name: android · debug apk
+    runs-on: ubuntu-latest
+    needs: [checks, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+      - name: Install the NDK the Gradle project expects
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # One architecture, not four. This job exists to prove the Rust side
+          # still compiles for Android and the Gradle project still assembles;
+          # a release for real devices is built deliberately, with a signing key
+          # this runner does not have.
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @yanuka/desktop tauri android build --debug --target aarch64
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.0.12077973
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yanuka-android-debug
+          path: apps/desktop/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 7
 
   installer:

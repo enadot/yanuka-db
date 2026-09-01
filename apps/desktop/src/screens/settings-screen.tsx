@@ -1,4 +1,4 @@
-import { Database, DatabaseBackup, FileUp, HardDrive, Info, Tags } from 'lucide-react';
+import { DatabaseBackup, FileUp, HardDrive, Info, Tags, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDateTime } from '@yanuka/utils';
 import {
@@ -15,6 +15,7 @@ import {
 } from '@yanuka/ui';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { SyncCard } from '../components/settings/sync-card';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
 import { backupNow, backupStatus, exportContactsCsv, type BackupStatus } from '../lib/desktop-io';
 import { useRepository } from '../lib/repository';
@@ -24,9 +25,8 @@ import { useIsLocalDatabase } from '../lib/repository';
  * Settings and database status.
  *
  * Reports what is actually true about this installation rather than offering
- * options that do not exist yet. The sync and permissions sections will appear
- * here when the server lands; until then, saying so plainly is better than a
- * disabled toggle.
+ * options that do not exist yet. Permissions will appear here when there is
+ * more than one person; until then, saying so plainly beats a disabled toggle.
  */
 export function SettingsScreen() {
   const { data: stats } = useDatabaseStats();
@@ -100,33 +100,7 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="size-4" aria-hidden />
-            סנכרון
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">סנכרון אחרון</span>
-            <span>{stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'טרם בוצע'}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">שינויים ממתינים</span>
-            <span className="numeric">{stats?.sync.pendingMutations ?? 0}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">התנגשויות פתוחות</span>
-            <span className="numeric">{stats?.sync.openConflicts ?? 0}</span>
-          </div>
-          <p className="pt-2 text-xs text-muted-foreground">
-            כל שינוי נרשם מקומית ומסונכרן כשהחיבור חוזר. המערכת עובדת במלואה גם ללא אינטרנט.
-          </p>
-        </CardContent>
-      </Card>
+      <SyncCard />
 
       <Card>
         <CardHeader>
@@ -153,6 +127,23 @@ export function SettingsScreen() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
+            <Trash2 className="size-4" aria-hidden />
+            סל המחזור
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">
+            מחיקה כאן היא לעולם לא סופית. כל איש קשר שנמחק ממתין בסל וניתן לשחזור מלא.
+          </p>
+          <Button asChild variant="outline" className="shrink-0">
+            <Link to="/trash">פתיחת סל המחזור</Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
             <DatabaseBackup className="size-4" aria-hidden />
             גיבוי וייצוא
           </CardTitle>
@@ -160,17 +151,15 @@ export function SettingsScreen() {
         <CardContent className="space-y-3">
           {isLocal ? (
             <p className="text-sm text-muted-foreground">
-              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים.
-              {' '}
-              גיבוי אחרון:{' '}
+              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים. גיבוי אחרון:{' '}
               <span data-testid="last-backup">
                 {backup?.lastBackupAt ? formatDateTime(backup.lastBackupAt) : 'טרם נלקח'}
               </span>
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני.
-              ייצוא ה־CSV פועל גם כאן.
+              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני. ייצוא
+              ה־CSV פועל גם כאן.
             </p>
           )}
           <div className="flex flex-wrap gap-2">

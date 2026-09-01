@@ -1,0 +1,40 @@
+# Fly.io deployment for the sync server.
+#
+# Set up once, from the repository root:
+#
+#     fly launch --no-deploy --copy-config --config crates/yanuka-sync-server/fly.toml
+#     fly postgres create --name yanuka-sync-db
+#     fly postgres attach yanuka-sync-db          # sets DATABASE_URL
+#     fly secrets set YANUKA_ENROLMENT_SECRET="$(openssl rand -base64 32)"
+#     fly deploy --config crates/yanuka-sync-server/fly.toml
+#
+# See docs/DEPLOY.md.
+
+app = "yanuka-sync"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Never scale to zero machines: a device that syncs once a week would find
+  # nothing listening, and the retry would look to the user like a broken sync.
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

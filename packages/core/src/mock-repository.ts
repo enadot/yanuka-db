@@ -12,6 +12,7 @@ import type {
   Category,
   ContactSummary,
   ContactWithRelations,
+  DeletedContact,
   FacetField,
   Note,
   Organization,
@@ -23,7 +24,12 @@ import type {
 } from '@yanuka/types';
 import { newId, nowIso, normalizePhone } from '@yanuka/utils';
 import { RepositoryError } from './errors.js';
-import { deriveDisplayName, scoreDuplicate, toDuplicateSubject, toSummary } from './contact-logic.js';
+import {
+  deriveDisplayName,
+  scoreDuplicate,
+  toDuplicateSubject,
+  toSummary,
+} from './contact-logic.js';
 import type {
   CategoryInput,
   ContactInput,
@@ -208,9 +214,7 @@ export class MockRepository implements ContactsRepository {
 
     // Keyset pagination: the cursor is the last id of the previous page, so
     // page N+1 costs the same as page 1 regardless of how deep it is.
-    const start = input.cursor
-      ? sorted.findIndex((contact) => contact.id === input.cursor) + 1
-      : 0;
+    const start = input.cursor ? sorted.findIndex((contact) => contact.id === input.cursor) + 1 : 0;
     const slice = sorted.slice(start, start + input.limit);
     const nextIndex = start + slice.length;
 
@@ -241,6 +245,15 @@ export class MockRepository implements ContactsRepository {
       .filter((contact) => contact.isFavorite)
       .slice(0, limit)
       .map(toSummary);
+  }
+
+  async deletedContacts(limit = 100): Promise<DeletedContact[]> {
+    await this.tick();
+    return this.contacts
+      .filter((contact) => contact.deletedAt != null)
+      .sort((a, b) => (a.deletedAt! < b.deletedAt! ? 1 : -1))
+      .slice(0, limit)
+      .map((contact) => ({ contact: toSummary(contact), deletedAt: contact.deletedAt! }));
   }
 
   // -- writes --------------------------------------------------------------
@@ -388,7 +401,9 @@ export class MockRepository implements ContactsRepository {
         introducedBy: null,
         introducedByContactId: null,
         isFavorite: false,
-        phones: input.phone ? [{ kind: 'mobile', raw: input.phone, isPrimary: true, label: null }] : [],
+        phones: input.phone
+          ? [{ kind: 'mobile', raw: input.phone, isPrimary: true, label: null }]
+          : [],
         emails: [],
         aliases: [],
         specialties: [],
@@ -415,50 +430,73 @@ export class MockRepository implements ContactsRepository {
       throw RepositoryError.staleVersion(baseVersion, existing.version);
     }
 
+    // Key presence, not `??`: a patch sends `null` to *clear* a field, and
+    // `??` would read that as "not supplied" and quietly keep the old value —
+    // making a cleared city impossible to save. The SQLite implementation
+    // draws the same distinction, which is why `ContactPatch` on the Rust side
+    // deserializes its nullable scalars through a double-option.
+    const take = <K extends keyof ContactInput>(key: K, fallback: ContactInput[K]) =>
+      key in patch ? (patch[key] as ContactInput[K]) : fallback;
+
     const merged: ContactInput = {
-      firstName: patch.firstName ?? existing.firstName,
-      lastName: patch.lastName ?? existing.lastName,
-      displayName: patch.displayName ?? existing.displayName,
-      prefix: patch.prefix ?? existing.prefix,
-      title: patch.title ?? existing.title,
-      country: patch.country ?? existing.country,
-      region: patch.region ?? existing.region,
-      city: patch.city ?? existing.city,
-      address: patch.address ?? existing.address,
-      postalCode: patch.postalCode ?? existing.postalCode,
-      profession: patch.profession ?? existing.profession,
-      role: patch.role ?? existing.role,
-      notes: patch.notes ?? existing.notes,
-      reasonForSaving: patch.reasonForSaving ?? existing.reasonForSaving,
-      source: patch.source ?? existing.source,
-      introducedBy: patch.introducedBy ?? existing.introducedBy,
-      introducedByContactId: patch.introducedByContactId ?? existing.introducedByContactId,
-      isFavorite: patch.isFavorite ?? existing.isFavorite,
-      phones: patch.phones ?? existing.phones.map((phone) => ({
-        id: phone.id,
-        kind: phone.kind,
-        raw: phone.raw,
-        label: phone.label,
-        isPrimary: phone.isPrimary,
-      })),
-      emails: patch.emails ?? existing.emails.map((email) => ({
-        id: email.id,
-        kind: email.kind,
-        address: email.address,
-        isPrimary: email.isPrimary,
-      })),
-      aliases: patch.aliases ?? existing.aliases.map((alias) => ({
-        id: alias.id,
-        kind: alias.kind,
-        value: alias.value,
-        languageCode: alias.languageCode,
-      })),
-      specialties: patch.specialties ?? existing.specialties,
-      languages: patch.languages ?? existing.languages,
-      tagIds: patch.tagIds ?? existing.tags.map((tag) => tag.id),
-      categoryIds: patch.categoryIds ?? existing.categories.map((category) => category.id),
-      organizations:
-        patch.organizations ??
+      firstName: take('firstName', existing.firstName),
+      lastName: take('lastName', existing.lastName),
+      displayName: take('displayName', existing.displayName),
+      prefix: take('prefix', existing.prefix),
+      title: take('title', existing.title),
+      country: take('country', existing.country),
+      region: take('region', existing.region),
+      city: take('city', existing.city),
+      address: take('address', existing.address),
+      postalCode: take('postalCode', existing.postalCode),
+      profession: take('profession', existing.profession),
+      role: take('role', existing.role),
+      notes: take('notes', existing.notes),
+      reasonForSaving: take('reasonForSaving', existing.reasonForSaving),
+      source: take('source', existing.source),
+      introducedBy: take('introducedBy', existing.introducedBy),
+      introducedByContactId: take('introducedByContactId', existing.introducedByContactId),
+      isFavorite: take('isFavorite', existing.isFavorite),
+      phones: take(
+        'phones',
+        existing.phones.map((phone) => ({
+          id: phone.id,
+          kind: phone.kind,
+          raw: phone.raw,
+          label: phone.label,
+          isPrimary: phone.isPrimary,
+        })),
+      ),
+      emails: take(
+        'emails',
+        existing.emails.map((email) => ({
+          id: email.id,
+          kind: email.kind,
+          address: email.address,
+          isPrimary: email.isPrimary,
+        })),
+      ),
+      aliases: take(
+        'aliases',
+        existing.aliases.map((alias) => ({
+          id: alias.id,
+          kind: alias.kind,
+          value: alias.value,
+          languageCode: alias.languageCode,
+        })),
+      ),
+      specialties: take('specialties', existing.specialties),
+      languages: take('languages', existing.languages),
+      tagIds: take(
+        'tagIds',
+        existing.tags.map((tag) => tag.id),
+      ),
+      categoryIds: take(
+        'categoryIds',
+        existing.categories.map((category) => category.id),
+      ),
+      organizations: take(
+        'organizations',
         existing.organizations.map((link) => ({
           organizationId: link.organizationId,
           role: link.role,
@@ -466,6 +504,7 @@ export class MockRepository implements ContactsRepository {
           startedAt: link.startedAt,
           endedAt: link.endedAt,
         })),
+      ),
     };
 
     const updated = this.materialize(id, merged, existing);
@@ -527,7 +566,12 @@ export class MockRepository implements ContactsRepository {
     await this.tick();
     const live = this.live();
     const pairs = new Map<string, DuplicatePair>();
-    const signal = (a: ContactWithRelations, b: ContactWithRelations, confidence: number, reason: string) => {
+    const signal = (
+      a: ContactWithRelations,
+      b: ContactWithRelations,
+      confidence: number,
+      reason: string,
+    ) => {
       const [first, second] = a.id < b.id ? [a, b] : [b, a];
       const key = `${first.id}:${second.id}`;
       const existing = pairs.get(key);
@@ -535,7 +579,12 @@ export class MockRepository implements ContactsRepository {
         existing.confidence = Math.max(existing.confidence, confidence);
         if (!existing.reasons.includes(reason)) existing.reasons.push(reason);
       } else {
-        pairs.set(key, { first: toSummary(first), second: toSummary(second), confidence, reasons: [reason] });
+        pairs.set(key, {
+          first: toSummary(first),
+          second: toSummary(second),
+          confidence,
+          reasons: [reason],
+        });
       }
     };
 
@@ -544,7 +593,12 @@ export class MockRepository implements ContactsRepository {
         const a = live[i]!;
         const b = live[j]!;
         const aDigits = a.phones.map((p) => p.digits).filter((d) => d.length >= 7);
-        const bDigits = new Set(b.phones.map((p) => p.digits).filter((d) => d.length >= 7).map((d) => d.slice(-7)));
+        const bDigits = new Set(
+          b.phones
+            .map((p) => p.digits)
+            .filter((d) => d.length >= 7)
+            .map((d) => d.slice(-7)),
+        );
         if (aDigits.some((d) => bDigits.has(d.slice(-7)))) {
           signal(a, b, 0.9, 'אותו מספר טלפון');
         }
@@ -553,7 +607,10 @@ export class MockRepository implements ContactsRepository {
         if (aEmails.some((e) => bEmails.has(e))) {
           signal(a, b, 0.85, 'אותה כתובת אימייל');
         }
-        if (normalizeName(a.displayName) !== '' && normalizeName(a.displayName) === normalizeName(b.displayName)) {
+        if (
+          normalizeName(a.displayName) !== '' &&
+          normalizeName(a.displayName) === normalizeName(b.displayName)
+        ) {
           signal(a, b, 0.5, 'שם זהה');
         }
       }
@@ -608,7 +665,9 @@ export class MockRepository implements ContactsRepository {
       const separator = '\n';
       const addition = `— מוזג מ״${merge.displayName}״ (${now}) —${separator}${extraNotes.join(separator)}`;
       keep.notes =
-        keep.notes && keep.notes !== '' ? `${keep.notes}${separator}${separator}${addition}` : addition;
+        keep.notes && keep.notes !== ''
+          ? `${keep.notes}${separator}${separator}${addition}`
+          : addition;
     }
 
     // Children move unless the kept side already holds the same value.
@@ -616,17 +675,27 @@ export class MockRepository implements ContactsRepository {
     keep.phones.push(
       ...merge.phones
         .filter((p) => !keepPhoneDigits.has(p.digits))
-        .map((p) => ({ ...p, contactId: keep.id, isPrimary: keep.phones.length === 0 && p.isPrimary })),
+        .map((p) => ({
+          ...p,
+          contactId: keep.id,
+          isPrimary: keep.phones.length === 0 && p.isPrimary,
+        })),
     );
     const keepEmails = new Set(keep.emails.map((e) => e.normalized));
     keep.emails.push(
       ...merge.emails
         .filter((e) => !keepEmails.has(e.normalized))
-        .map((e) => ({ ...e, contactId: keep.id, isPrimary: keep.emails.length === 0 && e.isPrimary })),
+        .map((e) => ({
+          ...e,
+          contactId: keep.id,
+          isPrimary: keep.emails.length === 0 && e.isPrimary,
+        })),
     );
     const keepAliases = new Set(keep.aliases.map((a) => a.normalized));
     keep.aliases.push(
-      ...merge.aliases.filter((a) => !keepAliases.has(a.normalized)).map((a) => ({ ...a, contactId: keep.id })),
+      ...merge.aliases
+        .filter((a) => !keepAliases.has(a.normalized))
+        .map((a) => ({ ...a, contactId: keep.id })),
     );
     keep.specialties = [...new Set([...keep.specialties, ...merge.specialties])];
     keep.languages = [...new Set([...keep.languages, ...merge.languages])];
@@ -636,7 +705,9 @@ export class MockRepository implements ContactsRepository {
     keep.categories.push(...merge.categories.filter((c) => !keepCategoryIds.has(c.id)));
     const keepOrgIds = new Set(keep.organizations.map((o) => o.organizationId));
     keep.organizations.push(
-      ...merge.organizations.filter((o) => !keepOrgIds.has(o.organizationId)).map((o) => ({ ...o, contactId: keep.id })),
+      ...merge.organizations
+        .filter((o) => !keepOrgIds.has(o.organizationId))
+        .map((o) => ({ ...o, contactId: keep.id })),
     );
     keep.contactNotes.push(...merge.contactNotes.map((note) => ({ ...note, contactId: keep.id })));
     merge.contactNotes = [];
@@ -644,7 +715,9 @@ export class MockRepository implements ContactsRepository {
     // Edges re-point unless they would duplicate an existing one or point home.
     for (const contact of this.contacts) {
       const seen = new Set(
-        contact.relationships.map((edge) => `${edge.direction}:${edge.type}:${edge.otherContact.id}`),
+        contact.relationships.map(
+          (edge) => `${edge.direction}:${edge.type}:${edge.otherContact.id}`,
+        ),
       );
       contact.relationships = contact.relationships.flatMap((edge) => {
         if (edge.otherContact.id !== mergeId) return [edge];
@@ -767,9 +840,7 @@ export class MockRepository implements ContactsRepository {
     const live = this.organizations.filter((org) => org.deletedAt == null);
     if (!query) return live.slice(0, limit);
     const needle = normalizeText(query);
-    return live
-      .filter((org) => normalizeText(org.name).includes(needle))
-      .slice(0, limit);
+    return live.filter((org) => normalizeText(org.name).includes(needle)).slice(0, limit);
   }
 
   async createOrganization(input: OrganizationInput): Promise<Organization> {
@@ -803,9 +874,7 @@ export class MockRepository implements ContactsRepository {
     if (!organization) throw RepositoryError.notFound('המוסד');
     organization.deletedAt = nowIso();
     for (const contact of this.contacts) {
-      contact.organizations = contact.organizations.filter(
-        (link) => link.organizationId !== id,
-      );
+      contact.organizations = contact.organizations.filter((link) => link.organizationId !== id);
     }
   }
 
@@ -918,9 +987,7 @@ export class MockRepository implements ContactsRepository {
 
   async auditLog(entityId?: Ulid, limit = 50): Promise<AuditLogEntry[]> {
     await this.tick();
-    const rows = entityId
-      ? this.audit.filter((entry) => entry.entityId === entityId)
-      : this.audit;
+    const rows = entityId ? this.audit.filter((entry) => entry.entityId === entityId) : this.audit;
     return rows.slice(0, limit);
   }
 }

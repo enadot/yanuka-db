@@ -41,7 +41,7 @@ apps/desktop        React + shadcn/ui frontend, and the Tauri shell
 crates/yanuka-db    rusqlite storage, migrations, FTS5 search    (no Tauri dep)
 crates/yanuka-search Hebrew normalization and ranking            (no Tauri dep)
 packages/           types · validation · utils · search · database · core · ui
-docs/               architecture, database, search, sync, security, decisions
+docs/               architecture, database, search, sync, mobile, security, decisions
 ```
 
 ## Importing an existing archive
@@ -54,12 +54,36 @@ docs/               architecture, database, search, sync, security, decisions
 אימיילים ושמות; מיזוג מעביר הכול לרשומה הנשמרת, משמר שדות סותרים בהערות,
 ורושם את הרשומה הממוזגת במלואה ביומן השינויים. ADR-027.
 
+## Recording the connections
+
+כרטיס איש הקשר הוא גם מסך הכתיבה של הגרף: **קשרים** — מי המליץ, מי הכיר, מי
+תלמיד של מי, בשני הכיוונים ועם הערה על הקשר; **יומן הערות** — רשומות מתוארכות
+שנשמרות בנפרד מההערה הקבועה ונכנסות לאינדקס החיפוש; ו**מוסדות** — שיוך לישיבה,
+לבית כנסת או לארגון, עם יצירת מוסד חדש מתוך הטופס. ADR-030.
+
+עריכה לעולם אינה מוחקת מה שהטופס לא הציג: patch מבחין בין שדה שלא נגעו בו,
+שדה שרוקנו במכוון, ואוסף שנמחק כולו. ADR-029.
+
+מחיקה היא לעולם לא סופית: הגדרות ← סל המחזור מציג כל איש קשר שנמחק, עם תאריך
+המחיקה, ומשחזר אותו על כל הטלפונים, ההערות והקשרים. אין "רוקן את הסל" — ADR-031
+מסביר למה.
+
+## The interface
+
+מסך הבית מציג **מה אפשר לחפש**, כשבבים לחיצים — מקצוע, עיר, שגיאת כתיב, סוף
+מספר טלפון, מילה מתוך הערה. תיבת חיפוש ברורה רק למי שכבר יודע מה המנוע מקבל;
+מי שלא, מבין ריבוע ריק כ"אני חייב לזכור את השם" — בדיוק המקרה שהמוצר קיים בשבילו.
+
+הטיפוגרפיה היא Google Sans, ארוזה מקומית ב־WOFF2 בארבעה משקלים (ADR-032). בכל
+שורה יש דבר כבד אחד בלבד — השם — וכל השאר שקט; פריט פעיל בניווט מסומן בשלוש
+דרכים; טבעת פוקוס של 3px; וכל אלמנט לחיץ הוא לפחות 44 פיקסלים.
+
 ## Verification
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test   # 133 TypeScript tests
-cargo test -p yanuka-db -p yanuka-search   # 29 Rust tests
-pnpm --filter @yanuka/desktop test:e2e     # 11 Playwright tests in Chromium
+pnpm lint && pnpm typecheck && pnpm test   # 172 TypeScript tests
+cargo test -p yanuka-db -p yanuka-search   # 42 Rust tests
+pnpm --filter @yanuka/desktop test:e2e     # 23 Playwright tests in Chromium
 ```
 
 The migration tests run the **real** production `.sql` against real SQLite via
@@ -91,6 +115,7 @@ CI covers the shell on both `ubuntu-latest` (with the apt packages) and
 | [Rust](https://rustup.rs) (stable, MSVC toolchain) | rustup's default on Windows |
 | [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) | tick **Desktop development with C++** |
 | WebView2 | already present on Windows 10 1803+ and Windows 11 |
+| Several GB of free disk | `target\debug` for the Tauri tree is large, and Windows adds `.pdb` files on top |
 
 ### Run it
 
@@ -104,6 +129,40 @@ pnpm --filter @yanuka/desktop tauri dev     # the real desktop app, live SQLite
 
 The first `tauri dev` compiles SQLite and the Rust dependencies and takes
 several minutes; afterwards it is incremental.
+
+**If it dies with `os error 1455` — "the paging file is too small"** — rustc ran
+out of virtual memory, not disk. The workspace already strips debug information
+from dependencies to keep the build within reach (`[profile.dev]` in
+`Cargo.toml`), but a small paging file can still lose. In order:
+
+```powershell
+cargo clean                                    # the failed build leaves corrupt .rlib metadata
+$env:CARGO_BUILD_JOBS=2 ; pnpm --filter @yanuka/desktop tauri dev
+```
+
+**If it dies with `os error 112` — "there is not enough space on the disk"** — that
+is real disk, not the paging file. **Do not run `cargo clean`**: the failure
+usually lands on one of the last crates, everything before it is already cached,
+and freeing space and re-running resumes in a minute. `cargo clean` throws that
+away and walks into the same wall twenty minutes later. To see what the build is
+holding:
+
+```powershell
+Get-PSDrive C | Select-Object Used,Free
+"{0:N1} GB" -f ((Get-ChildItem target -Recurse -File | Measure-Object Length -Sum).Sum / 1GB)
+```
+
+On a machine where C: is permanently tight, move the build output to another
+drive once and stop thinking about it:
+
+```powershell
+$env:CARGO_TARGET_DIR="D:\rust-target"
+```
+
+If the paging-file error persists instead, raise the paging file: **System Properties → Advanced →
+Performance Settings → Advanced → Virtual memory → Change**, uncheck *Automatically
+manage*, choose **System managed size** (or a custom size of 16 GB or more), and
+reboot. Building the `windows` and `tauri` crates is genuinely memory-hungry.
 
 ### Build the installer
 
@@ -155,7 +214,10 @@ Changes are not saved between runs; everything else behaves identically.
 Built and verified: the data model, the search engine, the local SQLite layer,
 and the Desktop MVP (search, list, detail, add, edit).
 
+Since then: sync between devices, a screen for deciding between two versions of
+one detail, and an Android build from this same source
+([`docs/SYNC.md`](docs/SYNC.md), [`docs/MOBILE.md`](docs/MOBILE.md)).
+
 Designed and deliberately deferred, each with its cost recorded in
-[`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, encryption at rest, CSV/OCR import, local semantic search, and the
-web and Android clients.
+[`docs/DECISIONS.md`](docs/DECISIONS.md): permission enforcement, encryption at
+rest, OCR import, local semantic search, and the web client.

@@ -1,22 +1,41 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { HardDrive } from 'lucide-react';
 import { formatRelative } from '@yanuka/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@yanuka/ui';
-import { useDatabaseStats } from '../../hooks/use-contacts';
 import { useIsLocalDatabase } from '../../lib/repository';
+import { backupStatus, syncStatus } from '../../lib/desktop-io';
 
 /**
- * Offline / sync status.
+ * Where the data stands, in the only terms that are currently true.
  *
- * Written in plain language on purpose. The person using this works offline for
- * days at a time and does not need to think about mutation queues — they need
- * to know that their data is safe locally and how much has yet to leave the
- * machine. Technical detail stays in the tooltip.
+ * This has had to change twice, and the reason is worth keeping. It first read
+ * "סנכרון אחרון: מעולם לא" with a count of changes waiting — accurate, and read
+ * by the user as a stalled queue, because there was no transport and that queue
+ * was never going to drain. It was then rewritten to lead with the daily backup,
+ * which was the honest answer while sync did not exist. Now it does exist, but
+ * only once a device has actually been connected.
+ *
+ * So the line follows the state rather than the roadmap. Connected: when work
+ * last left this machine, and how much has not. Not connected: the backup, which
+ * is what protects the archive when nothing else does. Neither says "never" at
+ * a user who has done nothing wrong.
  */
 export function SyncIndicator() {
-  const { data } = useDatabaseStats();
   const isLocal = useIsLocalDatabase();
 
-  const pending = data?.sync.pendingMutations ?? 0;
+  const { data: sync } = useQuery({
+    queryKey: ['sync-status'],
+    queryFn: syncStatus,
+    enabled: isLocal,
+  });
+  const { data: backup } = useQuery({
+    queryKey: ['backup-status'],
+    queryFn: backupStatus,
+    enabled: isLocal,
+  });
+
+  const pending = sync?.pendingChanges ?? 0;
 
   return (
     <Tooltip>
@@ -26,18 +45,41 @@ export function SyncIndicator() {
             <HardDrive className="size-3.5 text-emerald-600" aria-hidden />
             מאגר מקומי: זמין
           </div>
-          <div className="text-muted-foreground">
-            סנכרון אחרון: {formatRelative(data?.sync.lastSyncAt ?? null)}
-          </div>
-          {pending > 0 ? (
-            <div className="text-amber-600">{pending} שינויים ממתינים לסנכרון</div>
-          ) : null}
+
+          {!isLocal ? (
+            <div className="text-amber-600">מצב הדגמה — הנתונים לא נשמרים</div>
+          ) : sync?.connected ? (
+            <>
+              <div className="text-muted-foreground">
+                סונכרן: {formatRelative(sync.lastSyncAt ?? null)}
+              </div>
+              {pending > 0 ? (
+                <div className="text-amber-600">{pending} שינויים ממתינים לשליחה</div>
+              ) : null}
+              {sync.openConflicts > 0 ? (
+                // A count on its own would be a dead end: it names a decision
+                // without offering anywhere to make it.
+                <Link to="/conflicts" className="block text-amber-600 hover:underline">
+                  {sync.openConflicts} פרטים ממתינים להכרעה
+                </Link>
+              ) : null}
+            </>
+          ) : (
+            <div className="text-muted-foreground">
+              גיבוי אחרון: {formatRelative(backup?.lastBackupAt ?? null)}
+            </div>
+          )}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="left" className="max-w-64">
-        {isLocal
-          ? 'המידע נשמר במסד נתונים מקומי במחשב זה ועובד גם ללא אינטרנט. סנכרון לשרת יתבצע כשהחיבור יחזור.'
-          : 'הרצה במצב הדגמה: הנתונים נטענים לזיכרון בלבד ולא נשמרים.'}
+
+      <TooltipContent side="left" className="max-w-72">
+        {!isLocal
+          ? 'הרצה במצב הדגמה: הנתונים נטענים לזיכרון בלבד ולא נשמרים.'
+          : sync?.connected
+            ? `המידע נשמר במחשב הזה ועובד גם ללא אינטרנט. שינויים נשלחים למכשירים האחרים כשיש חיבור${
+                pending > 0 ? `, וכרגע ${pending} ממתינים` : ''
+              }. גיבוי אוטומטי נלקח פעם ביום.`
+            : 'המידע נשמר במסד נתונים מקומי במחשב זה ועובד גם ללא אינטרנט, וגיבוי נלקח אוטומטית פעם ביום. סנכרון עם מכשירים נוספים אפשרי דרך ההגדרות, ואינו נדרש.'}
       </TooltipContent>
     </Tooltip>
   );

@@ -14,6 +14,11 @@ pub struct AppState {
     connection: Mutex<Connection>,
     /// Where the database lives, for the backup commands.
     database_path: std::path::PathBuf,
+    /// Held for the duration of a sync round, by the background loop and by the
+    /// button in settings alike. Not a database lock — an async one, because
+    /// what it guards spans network calls, and the database is deliberately
+    /// released between them.
+    sync_gate: tauri::async_runtime::Mutex<()>,
 }
 
 impl AppState {
@@ -26,7 +31,11 @@ impl AppState {
         if applied > 0 {
             eprintln!("applied {applied} migration(s)");
         }
-        Ok(Self { connection: Mutex::new(connection), database_path: path.to_path_buf() })
+        Ok(Self {
+            connection: Mutex::new(connection),
+            database_path: path.to_path_buf(),
+            sync_gate: tauri::async_runtime::Mutex::new(()),
+        })
     }
 
     /// Run something against the database.
@@ -39,8 +48,25 @@ impl AppState {
         &self.database_path
     }
 
+    /// Serialises sync rounds. See the field, and `sync_loop`.
+    pub fn sync_gate(&self) -> &tauri::async_runtime::Mutex<()> {
+        &self.sync_gate
+    }
+
     pub fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
         let mut guard = self.connection.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&mut guard)
+    }
+}
+
+/// The sync loop borrows the database the same way every screen does.
+///
+/// Implementing the trait rather than handing the loop a connection is what
+/// keeps the mutex from being held across a network request — which, on a
+/// machine whose connection may be slow or absent, would mean the whole
+/// interface freezing until an HTTP call finished or timed out.
+impl yanuka_sync_client::Database for AppState {
+    fn with<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
+        AppState::with(self, f)
     }
 }

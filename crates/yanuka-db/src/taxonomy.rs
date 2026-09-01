@@ -3,13 +3,27 @@
 //! Straightforward CRUD, kept out of `repository.rs` so that file stays about
 //! the contact record itself. Anything here that changes what a contact matches
 //! on reindexes the affected contact, in the same transaction as the write.
+//!
+//! Every write here also appends to the mutation log. That is easy to forget in
+//! this file precisely because it reads as simple CRUD, and for a while none of
+//! it was logged at all — a relationship, the one thing the product is built to
+//! answer questions about, changed on disk and was invisible to sync.
+//!
+//! The soft deletes are the exception worth naming: deleting a tag or an
+//! organization also soft-deletes the join rows pointing at it, and those
+//! cascades are not logged separately. They follow deterministically from the
+//! parent id, so a device replaying the parent delete reproduces them exactly —
+//! which does mean the apply side has to perform the cascade. See docs/SYNC.md.
 
 use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::json;
 use yanuka_search::normalize_text;
 
 use crate::error::{DbError, Result};
 use crate::index::reindex_contact;
 use crate::models::*;
+use crate::mutation::{self, Operation};
+use crate::repository::device_id;
 use crate::{new_id, now_iso};
 
 pub fn list_tags(connection: &Connection) -> Result<Vec<Tag>> {
@@ -32,7 +46,7 @@ pub fn list_tags(connection: &Connection) -> Result<Vec<Tag>> {
 /// Idempotent on purpose: `סת"ם` and `סתם` are the same tag, and quietly
 /// reusing it is better than accumulating near-duplicates that split the facet
 /// counts and make the filter panel useless.
-pub fn create_tag(connection: &Connection, name: &str, color: Option<&str>) -> Result<Tag> {
+pub fn create_tag(connection: &mut Connection, name: &str, color: Option<&str>) -> Result<Tag> {
     let normalized = normalize_text(name);
     if normalized.is_empty() {
         return Err(DbError::Validation("יש להזין שם תגית".into()));
@@ -52,11 +66,26 @@ pub fn create_tag(connection: &Connection, name: &str, color: Option<&str>) -> R
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO tags (id, name, normalized, color, created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, name.trim(), normalized, color, now],
     )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "tag",
+            entity_id: &id,
+            operation: Operation::Create,
+            payload: Some(&json!({ "name": name.trim(), "color": color })),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
+    tx.commit()?;
     get_tag(connection, &id)
 }
 
@@ -83,9 +112,22 @@ pub fn delete_tag(connection: &mut Connection, id: &str) -> Result<()> {
     };
 
     let now = now_iso();
+    let device = device_id(connection)?;
     let tx = connection.transaction()?;
     tx.execute("UPDATE tags SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
     tx.execute("UPDATE contact_tags SET deleted_at = ?2 WHERE tag_id = ?1", params![id, now])?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "tag",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
     }
@@ -109,7 +151,7 @@ pub fn list_categories(connection: &Connection) -> Result<Vec<Category>> {
 }
 
 pub fn create_category(
-    connection: &Connection,
+    connection: &mut Connection,
     name: &str,
     description: Option<&str>,
 ) -> Result<Category> {
@@ -120,11 +162,26 @@ pub fn create_category(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO categories (id, name, normalized, description, created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, name.trim(), normalized, description, now],
     )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "category",
+            entity_id: &id,
+            operation: Operation::Create,
+            payload: Some(&json!({ "name": name.trim(), "description": description })),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
+    tx.commit()?;
 
     Ok(connection.query_row("SELECT * FROM categories WHERE id = ?1", params![id], |row| {
         Ok(Category {
@@ -147,11 +204,24 @@ pub fn delete_category(connection: &mut Connection, id: &str) -> Result<()> {
     };
 
     let now = now_iso();
+    let device = device_id(connection)?;
     let tx = connection.transaction()?;
     tx.execute("UPDATE categories SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
     tx.execute(
         "UPDATE contact_categories SET deleted_at = ?2 WHERE category_id = ?1",
         params![id, now],
+    )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "category",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
     )?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
@@ -188,7 +258,7 @@ pub fn list_organizations(
 }
 
 pub fn create_organization(
-    connection: &Connection,
+    connection: &mut Connection,
     name: &str,
     kind: &str,
     city: Option<&str>,
@@ -201,12 +271,29 @@ pub fn create_organization(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO organizations (id, name, normalized, kind, city, country,
                                     created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, 1)",
         params![id, name.trim(), normalized, kind, city, country, now],
     )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "organization",
+            entity_id: &id,
+            operation: Operation::Create,
+            payload: Some(
+                &json!({ "name": name.trim(), "kind": kind, "city": city, "country": country }),
+            ),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
+    tx.commit()?;
 
     list_organizations(connection, Some(name), 1)?
         .into_iter()
@@ -224,11 +311,24 @@ pub fn delete_organization(connection: &mut Connection, id: &str) -> Result<()> 
     };
 
     let now = now_iso();
+    let device = device_id(connection)?;
     let tx = connection.transaction()?;
     tx.execute("UPDATE organizations SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
     tx.execute(
         "UPDATE contact_organizations SET deleted_at = ?2 WHERE organization_id = ?1",
         params![id, now],
+    )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "organization",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
     )?;
     for contact_id in &affected {
         reindex_contact(&tx, contact_id)?;
@@ -239,7 +339,7 @@ pub fn delete_organization(connection: &mut Connection, id: &str) -> Result<()> 
 
 /// Create a directed relationship between two contacts.
 pub fn create_relationship(
-    connection: &Connection,
+    connection: &mut Connection,
     from_id: &str,
     to_id: &str,
     kind: &str,
@@ -251,20 +351,52 @@ pub fn create_relationship(
 
     let id = new_id();
     let now = now_iso();
-    connection.execute(
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute(
         "INSERT INTO relationships (id, from_contact_id, to_contact_id, type, notes,
                                     created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, 1)",
         params![id, from_id, to_id, kind, notes, now],
     )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "relationship",
+            entity_id: &id,
+            operation: Operation::Create,
+            payload: Some(&json!({
+                "fromContactId": from_id,
+                "toContactId": to_id,
+                "type": kind,
+                "notes": notes,
+            })),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
+    tx.commit()?;
     Ok(id)
 }
 
-pub fn delete_relationship(connection: &Connection, id: &str) -> Result<()> {
-    connection.execute(
-        "UPDATE relationships SET deleted_at = ?2 WHERE id = ?1",
-        params![id, now_iso()],
+pub fn delete_relationship(connection: &mut Connection, id: &str) -> Result<()> {
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute("UPDATE relationships SET deleted_at = ?2 WHERE id = ?1", params![id, now_iso()])?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "relationship",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -281,11 +413,28 @@ pub fn add_note(
 
     let id = new_id();
     let now = now_iso();
+    let device = device_id(connection)?;
     let tx = connection.transaction()?;
     tx.execute(
         "INSERT INTO notes (id, contact_id, body, is_sensitive, created_at, updated_at, version)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
         params![id, contact_id, body.trim(), i64::from(is_sensitive), now],
+    )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "note",
+            entity_id: &id,
+            operation: Operation::Create,
+            payload: Some(&json!({
+                "contactId": contact_id,
+                "body": body.trim(),
+                "isSensitive": is_sensitive,
+            })),
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
     )?;
     reindex_contact(&tx, contact_id)?;
     tx.commit()?;
@@ -297,8 +446,21 @@ pub fn delete_note(connection: &mut Connection, id: &str) -> Result<()> {
         .query_row("SELECT contact_id FROM notes WHERE id = ?1", params![id], |row| row.get(0))
         .optional()?;
 
+    let device = device_id(connection)?;
     let tx = connection.transaction()?;
     tx.execute("UPDATE notes SET deleted_at = ?2 WHERE id = ?1", params![id, now_iso()])?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "note",
+            entity_id: id,
+            operation: Operation::Delete,
+            payload: None,
+            previous: None,
+            base_version: 0,
+            device_id: &device,
+        },
+    )?;
     if let Some(contact_id) = contact_id {
         reindex_contact(&tx, &contact_id)?;
     }
@@ -321,7 +483,7 @@ pub fn stats(connection: &Connection) -> Result<serde_json::Value> {
             "lastSyncAt": serde_json::Value::Null,
             "pendingMutations": crate::mutation::pending_count(connection)?,
             "failedMutations": count("SELECT COUNT(*) FROM mutations WHERE status = 'failed'")?,
-            "openConflicts": count("SELECT COUNT(*) FROM conflicts WHERE resolved_at IS NULL")?,
+            "openConflicts": crate::conflicts::open_count(connection)?,
             "syncing": false,
         }
     }))

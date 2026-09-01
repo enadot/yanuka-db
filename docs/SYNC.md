@@ -1,8 +1,14 @@
 # SYNC
 
-**Status: designed and prepared, not implemented.** The mutation log, device
-registry, cursors and conflict tables ship and are written to on every local
-change. There is no network code. See ADR-019.
+**Status: implemented.** The mutation log records the change (ADR-033),
+`apply.rs` folds in a remote one (ADR-034), `yanuka-sync-server` keeps them in
+order without being able to read them (ADR-035), `yanuka-sync-client` drives the
+loop (ADR-036), and a person settles what the merge refuses to (ADR-037). Two
+real databases exchanging changes through a real server are tested end to end.
+
+Since ADR-038 it also runs on a timer rather than on a button: five minutes
+while the server is reachable, backing off to at most thirty while it is not,
+and back to five the moment one round succeeds. ADR-019 is discharged.
 
 That split is intentional. The expensive-to-change part is the *record* of what
 happened locally, and getting it wrong later means the changes made before the
@@ -16,9 +22,14 @@ that happens to be always on.
 
 ```
 Desktop SQLite ──→ mutation log ──→ sync engine ──→ API ──→ PostgreSQL
-      ▲                                                        │
+      ▲                                  (seals)              (blobs)
       └────────────────── incremental pull ────────────────────┘
 ```
+
+The server stores `(seq, id, device_id, created_at, nonce, ciphertext)` and
+nothing else. It has no schema mirroring this one, applies nothing, and cannot
+read a payload — the sealing happens on the device under a key the server never
+receives. See ADR-035.
 
 Every device can create data offline. No device is authoritative. The server
 does not win by virtue of being the server — it holds whatever it was last told,
@@ -40,9 +51,36 @@ payload · previous · base_version · created_at · device_id · user_id
 status(pending|syncing|synced|failed|conflict) · attempts · last_error
 ```
 
+What each operation carries:
+
+- **create** — the whole record, including its child collections. Nothing else
+  exists for a replaying device to build the contact from.
+- **update** — the changed fields only, compared against the *stored* record
+  rather than against the patch. A patch that re-sends an unchanged field is not
+  an edit; logging it as one manufactures conflicts on other devices.
+- **merge** — a field-level diff of what moved onto the surviving contact, plus
+  `mergedFrom`. Not just the operation name: re-deriving the merge remotely only
+  agrees if that device holds byte-identical copies of both originals.
+- **delete** — no payload. The tombstone is the `deleted_at` update.
+
+A **child collection counts as one field**. If any phone changes, the whole
+phone list is in the payload, because `write_children` replaces each collection
+wholesale — the list genuinely is the unit that changed. The cost: two devices
+editing different phone numbers of one contact collide, where two devices
+editing the city and the profession merge cleanly.
+
+Snapshots are **read back from the database**, not serialised from the input
+struct. Child ids are minted during the write, and a payload carrying
+`"id": null` would have each device inventing its own id for the same phone
+number — duplicates that no merge can reconcile, because nothing links the rows.
+
 `crates/yanuka-db/tests/repository.rs` asserts that create, update and delete
-each append a row. Nothing may change on disk without one, or an edit made
-offline would silently never reach another device.
+each append a row, *and* that the rows contain the data: what the user typed
+reaches the log, an edit logs the field that moved and not the ones that did
+not, every entity kind is logged, and a merge carries the details it moved.
+Nothing may change on disk without a mutation, or an edit made offline would
+silently never reach another device — and a mutation that names the change
+without recording it is the same failure with a passing test. See ADR-033.
 
 ## Push
 
@@ -68,6 +106,22 @@ entity type; the server returns everything changed after it plus a new cursor.
 A pulled change whose entity has pending local mutations is not applied blindly
 — it goes through the same merge as a rejected push.
 
+`apply::apply` is that merge, and it is already written. Its contract:
+
+| Outcome | Meaning |
+|---|---|
+| `Applied` | Written. |
+| `AlreadySeen` | The mutation id is already in the local log. At-least-once delivery makes this routine, not an error. |
+| `Conflicted(fields)` | Written except for those fields; both values are in `conflicts` and the local one stands. |
+| `Deferred` | The contact this belongs to has not arrived. **Nothing written, nothing recorded** — the next pass retries. |
+
+`Deferred` is the one a transport must handle correctly: a mutation that returns
+it has to stay in the queue. Acknowledging it would lose the note.
+
+Applying **never appends a local mutation**. A remote change written through the
+normal repository path would be pushed straight back, and the two devices would
+trade one edit forever.
+
 ## Conflicts
 
 Resolution is **per field**, not per record.
@@ -83,18 +137,55 @@ Desktop:  phone = 054-…          Android:  phone = 052-…
 ```
 
 Same field → a real conflict. **Both values are kept** in `conflicts` and the
-user is asked:
+user is asked, on `/conflicts`:
 
 ```
-נמצאו שתי גרסאות
-  גרסת Desktop: 054-…
-  גרסת Android: 052-…
-[בחר Desktop]  [בחר Android]  [ערוך ידנית]
+יעקב פרידמן
+  עיר
+  [ במחשב הזה        ] [ הגיע ממכשיר אחר  ]
+  [ אנטוורפן         ] [ לונדון           ]
+  [ 19.8.26, 12:00   ] [ 20.8.26, 11:00   ]
+                              [ שמירת הבחירה ]
 ```
 
 Never resolved silently, and never by last-write-wins on a timestamp. Clocks on
 two machines that have been offline are not comparable, and picking a winner
 means throwing away something a human typed on purpose.
+
+Nothing on that screen is preselected. A default would be a decision made on the
+user's behalf about data they typed, confirmable with one careless click. The
+save button stays disabled until something is actually chosen, and a field may
+be left open — some disagreements need a phone call before they can be settled,
+and the one that does not should not have to wait for the one that does.
+
+### A decision is itself a change
+
+The conflict is symmetric: this device holds X, the other holds Y, and both have
+an open record. Choosing X changes nothing here, so the ordinary "log what
+changed" path would record nothing and the other device would keep Y forever —
+two machines quietly disagreeing, each believing itself settled.
+
+So `conflicts::resolve` writes its own mutation, and sets `previous` to the
+**losing** value rather than the local one. That is exactly the baseline the
+other device needs: it compares `previous` against what it holds, finds them
+equal, and takes the decision as a plain update instead of raising a second
+conflict about the same field.
+
+The reverse also has to hold. When the other device decides first, its choice
+arrives here as an ordinary change and both sides end up agreeing — so
+`apply` reports the fields the two devices now agree on and `conflicts::settle`
+closes any open record naming them. Every question that turns out not to be one
+costs attention the next real question needs.
+
+The comparison that decides this is against `previous`, **not** against the
+version number. A version moves when any field changes, so it cannot tell
+"they edited the city while I edited the profession" from "we both edited the
+city". Only the prior value can.
+
+One exception, and it is a guard rather than a rule: a `create` arriving for a
+contact that already exists here carries no `previous` at all. It may fill a
+blank field; anything already filled is treated as a disagreement rather than
+overwritten.
 
 The governing rule, from PRODUCT.md: **a temporary duplicate is always better
 than lost data.** If the merge is ambiguous, keep both.
@@ -107,6 +198,13 @@ way to distinguish "deleted" from "not yet received".
 A tombstone is a normal update carrying `deleted_at`, and it merges like any
 other field. Restoring is setting it back to null, which is why undo is honest:
 the row never left.
+
+**Cascades are not logged.** Deleting a tag or an organization also soft-deletes
+the join rows pointing at it, and those rows get no mutations of their own: they
+follow deterministically from the parent id. The apply side must therefore
+perform the cascade itself when it receives a `tag` or `organization` delete.
+This keeps the log proportional to what the user did rather than to how many
+contacts happened to carry the tag.
 
 ## Devices
 
@@ -122,17 +220,36 @@ future ability to cut off a lost machine.
 
 Never the word "mutation".
 
+Once sync ships, three facts: the data is safe locally, when it last left the
+machine, and how much has not yet.
+
 ```
 מאגר מקומי: זמין
 סנכרון אחרון: לפני 5 דקות
 7 שינויים ממתינים לסנכרון
 ```
 
-Three facts: the data is safe locally, when it last left the machine, and how
-much has not yet. `SyncIndicator` shows exactly this.
+**But only once this device has been connected.** A device that has never
+joined a server has nothing to say about syncing, and saying "סנכרון אחרון:
+מעולם לא" at it describes a stalled queue rather than a feature it has not
+opted into. That is how it was read the first time, and it sent the user
+looking for a failure that did not exist.
+
+So the indicator follows the device's state, not the project's roadmap. Not
+connected, it leads with the daily backup (ADR-028), which is what protects the
+archive when nothing else does:
+
+```
+מאגר מקומי: זמין
+גיבוי אחרון: לפני שעתיים
+```
+
+The rule, for whoever changes this next: never show a counter that cannot go
+down, and never report an absence as a failure.
 
 ## Rules for anyone implementing this
 
+0. Applying a remote change never appends a local mutation.
 1. A local write must never wait on the network.
 2. A mutation is written in the same transaction as the change, or not at all.
 3. `payload` carries changed fields only. Sending whole records makes every edit
@@ -141,3 +258,5 @@ much has not yet. `SyncIndicator` shows exactly this.
 5. Never resolve a conflict silently. Never resolve one by timestamp.
 6. Deletions are tombstones.
 7. When in doubt, keep both versions.
+8. A change whose subject has not arrived is deferred, never dropped — and an
+   edge waits for both of its ends.

@@ -108,3 +108,119 @@ export async function exportContactsCsv(
   URL.revokeObjectURL(url);
   return fileName;
 }
+
+/**
+ * Sync, from the frontend's side.
+ *
+ * Desktop only, and honest about it: the browser build has an in-memory
+ * repository with nothing durable to sync, so these report "not connected"
+ * rather than pretending or throwing. That keeps the settings screen renderable
+ * in the demo build, which is where its layout is actually reviewed.
+ */
+
+export interface SyncStatus {
+  connected: boolean;
+  serverUrl: string | null;
+  lastSyncAt: string | null;
+  pendingChanges: number;
+  openConflicts: number;
+}
+
+export interface SyncOutcome {
+  pushed: number;
+  pulled: number;
+  applied: number;
+  conflicts: number;
+  deferred: number;
+  cursor: number;
+}
+
+const DISCONNECTED: SyncStatus = {
+  connected: false,
+  serverUrl: null,
+  lastSyncAt: null,
+  pendingChanges: 0,
+  openConflicts: 0,
+};
+
+export async function syncStatus(): Promise<SyncStatus> {
+  if (!isTauri()) return DISCONNECTED;
+  return (await invoke('sync_status')) as SyncStatus;
+}
+
+export async function syncConnect(code: string, deviceName: string): Promise<SyncOutcome> {
+  return (await invoke('sync_connect', { code, deviceName })) as SyncOutcome;
+}
+
+export async function syncNow(): Promise<SyncOutcome> {
+  return (await invoke('sync_now')) as SyncOutcome;
+}
+
+export async function syncShareCode(enrolmentSecret: string): Promise<string> {
+  return (await invoke('sync_share_code', { enrolmentSecret })) as string;
+}
+
+export async function syncDisconnect(): Promise<void> {
+  await invoke('sync_disconnect');
+}
+
+// ---------------------------------------------------------------------------
+// Conflicts
+// ---------------------------------------------------------------------------
+
+/** One field two devices answered differently. Both answers are kept. */
+export interface FieldConflict {
+  field: string;
+  localValue: unknown;
+  remoteValue: unknown;
+  localUpdatedAt: string;
+  remoteUpdatedAt: string;
+  localDeviceId: string | null;
+  remoteDeviceId: string | null;
+}
+
+export interface OpenConflict {
+  id: string;
+  entityType: string;
+  entityId: string;
+  displayName: string | null;
+  detectedAt: string;
+  fields: FieldConflict[];
+}
+
+export type ConflictSide = 'local' | 'remote';
+
+export interface FieldChoice {
+  field: string;
+  side: ConflictSide;
+}
+
+export async function openConflicts(): Promise<OpenConflict[]> {
+  // The browser build has no sync and therefore nothing to decide. An empty
+  // list rather than a thrown error, so the screen renders its empty state.
+  if (!isTauri()) return [];
+  return (await invoke('conflicts_open')) as OpenConflict[];
+}
+
+export async function resolveConflict(
+  conflictId: string,
+  choices: FieldChoice[],
+): Promise<void> {
+  await invoke('conflicts_resolve', { conflictId, choices });
+}
+
+/**
+ * Run `onChanged` whenever the background loop actually brought something in.
+ *
+ * Only on real news: the loop stays quiet on a round that moved nothing, so
+ * this does not turn into every screen refetching on a timer forever. Returns
+ * an unsubscribe function, and a no-op one in the browser build where there is
+ * no loop to listen to.
+ */
+export async function onSyncChanged(
+  onChanged: (outcome: SyncOutcome) => void,
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<SyncOutcome>('sync:changed', (event) => onChanged(event.payload));
+}

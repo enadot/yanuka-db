@@ -1,0 +1,6 @@
+<resources>
+    <!-- What the launcher shows under the icon. Hebrew, because the person
+         holding the phone reads Hebrew; the desktop window is titled the same. -->
+    <string name="app_name">"מאגר הקשרים"</string>
+    <string name="main_activity_title">"מאגר הקשרים"</string>
+</resources>

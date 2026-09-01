@@ -29,13 +29,7 @@ import {
 import { useContactList } from '../hooks/use-contacts';
 
 /** Hebrew alphabet, plus Latin and a bucket for everything else. */
-const ALPHABET = [
-  ...'אבגדהוזחטיכלמנסעפצקרשת'.split(''),
-  'A',
-  'M',
-  'S',
-  '#',
-];
+const ALPHABET = [...'אבגדהוזחטיכלמנסעפצקרשת'.split(''), 'A', 'M', 'S', '#'];
 
 /**
  * Browse the whole database.
@@ -113,8 +107,14 @@ export function ContactListScreen() {
         className="flex-wrap justify-start"
         aria-label="דילוג לאות"
       >
+        {/* 44px targets: this is a row of 30 adjacent buttons, and at the old
+            size hitting ג instead of ב was a coin toss. */}
         {ALPHABET.map((char) => (
-          <ToggleGroupItem key={char} value={char} className="size-8 p-0 text-sm">
+          <ToggleGroupItem
+            key={char}
+            value={char}
+            className="size-11 p-0 text-base font-semibold data-[state=on]:font-bold"
+          >
             {char}
           </ToggleGroupItem>
         ))}
@@ -146,10 +146,16 @@ export function ContactListScreen() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[28rem]">שם</TableHead>
-                <TableHead>מקצוע ומקום</TableHead>
-                <TableHead className="w-56">תגיות</TableHead>
-                <TableHead className="w-32">עודכן</TableHead>
+                {/*
+                  Four columns do not fit on a phone, and a table that scrolls
+                  sideways is a table nobody reads. So the narrow screen keeps
+                  the one column that identifies a person and folds the subtitle
+                  underneath the name; the rest reappear as the screen widens.
+                */}
+                <TableHead className="md:w-[28rem]">שם</TableHead>
+                <TableHead className="hidden md:table-cell">מקצוע ומקום</TableHead>
+                <TableHead className="hidden w-56 lg:table-cell">תגיות</TableHead>
+                <TableHead className="hidden w-32 sm:table-cell">עודכן</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -178,18 +184,22 @@ export function ContactListScreen() {
                         />
                       ) : null}
                     </Link>
+                    {/* Where the column is hidden, the same words go here. */}
+                    <p className="ps-11 text-sm text-muted-foreground md:hidden">
+                      {formatSubtitle(contact) || '—'}
+                    </p>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
                     {formatSubtitle(contact) || '—'}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden lg:table-cell">
                     <div className="flex flex-wrap gap-1">
                       {contact.tags.slice(0, 3).map((tag) => (
                         <TagPill key={tag} name={tag} />
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                     {formatRelative(contact.updatedAt)}
                   </TableCell>
                 </TableRow>
@@ -200,7 +210,10 @@ export function ContactListScreen() {
       )}
 
       <div className="flex items-center justify-between">
-        <Select value={String(limit)} onValueChange={(value) => reset(() => setLimit(Number(value)))}>
+        <Select
+          value={String(limit)}
+          onValueChange={(value) => reset(() => setLimit(Number(value)))}
+        >
           <SelectTrigger className="w-32" aria-label="שורות בעמוד">
             <SelectValue />
           </SelectTrigger>

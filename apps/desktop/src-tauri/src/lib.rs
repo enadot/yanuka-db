@@ -8,6 +8,7 @@
 mod backup;
 mod commands;
 mod state;
+mod sync_loop;
 
 use state::AppState;
 use tauri::Manager;
@@ -45,6 +46,9 @@ pub fn run() {
                 }
             });
             app.manage(state);
+            // After `manage`: the loop resolves the state on every round, and
+            // the first thing it would do is look for something not yet there.
+            sync_loop::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -54,6 +58,7 @@ pub fn run() {
             commands::get_contact,
             commands::recent_contacts,
             commands::favorite_contacts,
+            commands::deleted_contacts,
             commands::create_contact,
             commands::quick_add_contact,
             commands::update_contact,
@@ -83,6 +88,13 @@ pub fn run() {
             commands::backup_status,
             commands::save_exported_csv,
             commands::audit_log,
+            commands::sync_status,
+            commands::sync_connect,
+            commands::sync_now,
+            commands::sync_share_code,
+            commands::sync_disconnect,
+            commands::conflicts_open,
+            commands::conflicts_resolve,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
