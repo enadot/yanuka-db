@@ -129,12 +129,6 @@ export const TagInputSchema = z.object({
   description: optionalText(300),
 });
 
-export const CategoryInputSchema = z.object({
-  name: requiredText(60, 'יש להזין שם קטגוריה'),
-  description: optionalText(300),
-  parentId: UlidSchema.nullable().default(null),
-});
-
 export const OrganizationInputSchema = z.object({
   name: requiredText(200, 'יש להזין שם מוסד'),
   kind: z.enum(ORGANIZATION_KINDS).default('organization'),

@@ -1,4 +1,5 @@
 import type {
+  CategoryRule,
   AliasKind,
   CountryCode,
   EmailKind,
@@ -86,6 +87,11 @@ export interface SeedTag {
 export interface SeedCategory {
   name: string;
   description?: string;
+  icon?: string;
+  color?: string;
+  /** Who belongs automatically; omitted for a hand-filled category. */
+  rule?: CategoryRule;
+  showOnHome?: boolean;
 }
 
 export interface SeedDataset {

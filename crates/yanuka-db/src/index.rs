@@ -18,6 +18,10 @@ use crate::error::Result;
 /// rowid we control, and a partial update that silently failed would leave a
 /// contact findable under a name they no longer have.
 pub fn reindex_contact(tx: &Transaction<'_>, contact_id: &str) -> Result<()> {
+    // Rule categories first: the FTS document below lists the categories the
+    // contact is in, and that answer must be current (ADR-038).
+    crate::categories::refresh_contact(tx, contact_id)?;
+
     tx.execute("DELETE FROM contact_fts WHERE contact_id = ?1", params![contact_id])?;
     tx.execute("DELETE FROM contact_trigram WHERE contact_id = ?1", params![contact_id])?;
 
@@ -89,8 +93,8 @@ pub fn reindex_contact(tx: &Transaction<'_>, contact_id: &str) -> Result<()> {
     )?;
     let categories = collect(
         tx,
-        "SELECT c.name FROM contact_categories cc JOIN categories c ON c.id = cc.category_id
-          WHERE cc.contact_id = ?1 AND cc.deleted_at IS NULL AND c.deleted_at IS NULL",
+        "SELECT cat.name FROM category_members cm JOIN categories cat ON cat.id = cm.category_id
+          WHERE cm.contact_id = ?1",
         contact_id,
     )?;
     let organizations = collect(

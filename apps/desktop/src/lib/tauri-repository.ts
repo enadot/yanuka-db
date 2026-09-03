@@ -1,8 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
-import { toRepositoryError, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type DuplicatePair, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
+import { toRepositoryError, type CategoryMembersOptions, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type DuplicatePair, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
 import type {
   AuditLogEntry,
   Category,
+  CategoryMembersPage,
+  CategoryMembershipMode,
+  CategoryPreview,
+  CategoryRule,
+  CategorySuggestion,
+  CategorySummary,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
@@ -142,16 +148,53 @@ export class TauriRepository implements ContactsRepository {
     return this.call('delete_tag', { id });
   }
 
-  listCategories(): Promise<Category[]> {
+  listCategories(): Promise<CategorySummary[]> {
     return this.call('list_categories');
+  }
+
+  getCategory(id: Ulid): Promise<CategorySummary | null> {
+    return this.call('get_category', { id });
   }
 
   createCategory(input: CategoryInput): Promise<Category> {
     return this.call('create_category', { input });
   }
 
+  updateCategory(id: Ulid, input: CategoryInput): Promise<Category> {
+    return this.call('update_category', { id, input });
+  }
+
   deleteCategory(id: Ulid): Promise<void> {
     return this.call('delete_category', { id });
+  }
+
+  reorderCategories(ids: Ulid[]): Promise<void> {
+    return this.call('reorder_categories', { ids });
+  }
+
+  categoryMembers(id: Ulid, options: CategoryMembersOptions = {}): Promise<CategoryMembersPage> {
+    return this.call('category_members', {
+      id,
+      query: options.query ?? null,
+      limit: options.limit ?? 100,
+      offset: options.offset ?? 0,
+    });
+  }
+
+  previewCategoryRule(rule: CategoryRule): Promise<CategoryPreview> {
+    return this.call('preview_category_rule', { rule });
+  }
+
+  setCategoryMembership(
+    categoryId: Ulid,
+    contactId: Ulid,
+    mode: CategoryMembershipMode,
+  ): Promise<void> {
+    return this.call('set_category_membership', { categoryId, contactId, mode });
+  }
+
+  suggestCategories(): Promise<CategorySuggestion[]> {
+    return this.call('suggest_categories');
   }
 
   listOrganizations(query?: string, limit = 50): Promise<Organization[]> {
@@ -225,8 +268,15 @@ export const IPC_COMMANDS = [
   'create_tag',
   'delete_tag',
   'list_categories',
+  'get_category',
   'create_category',
+  'update_category',
   'delete_category',
+  'reorder_categories',
+  'category_members',
+  'preview_category_rule',
+  'set_category_membership',
+  'suggest_categories',
   'list_organizations',
   'create_organization',
   'delete_organization',

@@ -10,6 +10,14 @@ import {
 import type {
   AuditLogEntry,
   Category,
+  CategoryMember,
+  CategoryMembersPage,
+  CategoryMembership,
+  CategoryMembershipMode,
+  CategoryPreview,
+  CategoryRule,
+  CategorySuggestion,
+  CategorySummary,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
@@ -25,8 +33,10 @@ import type {
 import { newId, nowIso, normalizePhone } from '@yanuka/utils';
 import { RepositoryError } from './errors.js';
 import { deriveDisplayName, scoreDuplicate, toDuplicateSubject, toSummary } from './contact-logic.js';
+import { evaluateRule } from './category-rules.js';
 import type {
   CategoryInput,
+  CategoryMembersOptions,
   ContactInput,
   ContactsRepository,
   DatabaseStats,
@@ -92,6 +102,12 @@ export class MockRepository implements ContactsRepository {
   private contacts: ContactWithRelations[];
   private tags: Tag[];
   private categories: Category[];
+  /**
+   * Manual exclusions, keyed `categoryId:contactId`. `contact.categories` in
+   * the store holds only manual pins; rule membership is derived on read by
+   * `withCategories`, exactly as the SQLite view does.
+   */
+  private excluded = new Set<string>();
   private organizations: Organization[];
   private relationships: Relationship[];
   private audit: Array<AuditLogEntry & { related?: Ulid[] }> = [];
@@ -119,7 +135,8 @@ export class MockRepository implements ContactsRepository {
     return this.contacts.filter((contact) => contact.deletedAt == null);
   }
 
-  private toRecord(contact: ContactWithRelations): SearchableRecord {
+  private toRecord(stored: ContactWithRelations): SearchableRecord {
+    const contact = this.withCategories(stored);
     const facetValues: Partial<Record<FacetField, string[]>> = {
       country: contact.country ? [contact.country] : [],
       city: contact.city ? [contact.city] : [],
@@ -293,7 +310,56 @@ export class MockRepository implements ContactsRepository {
 
   async getContact(id: Ulid): Promise<ContactWithRelations | null> {
     await this.tick();
-    return this.contacts.find((contact) => contact.id === id) ?? null;
+    const contact = this.contacts.find((candidate) => candidate.id === id);
+    return contact ? this.withCategories(contact) : null;
+  }
+
+  // -- smart categories (ADR-038) --------------------------------------------
+
+  private liveCategories(): Category[] {
+    return this.categories
+      .filter((category) => category.deletedAt == null)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'he'));
+  }
+
+  private isExcluded(categoryId: Ulid, contactId: Ulid): boolean {
+    return this.excluded.has(`${categoryId}:${contactId}`);
+  }
+
+  /** Why one stored contact is in a category, or null when they are not. */
+  private membershipIn(
+    category: Category,
+    stored: ContactWithRelations,
+  ): CategoryMembership['membership'] | null {
+    if (this.isExcluded(category.id, stored.id)) return null;
+    if (stored.categories.some((pinned) => pinned.id === category.id)) return 'manual';
+    if (category.rule && evaluateRule(category.rule, stored)) return 'rule';
+    return null;
+  }
+
+  /** Effective membership of one stored contact: pins and rule matches, minus exclusions. */
+  private membershipsOf(stored: ContactWithRelations): CategoryMembership[] {
+    return this.liveCategories().flatMap((category) => {
+      const membership = this.membershipIn(category, stored);
+      return membership ? [{ ...category, membership }] : [];
+    });
+  }
+
+  private withCategories(stored: ContactWithRelations): ContactWithRelations {
+    return { ...stored, categories: this.membershipsOf(stored) };
+  }
+
+  private membersOf(category: Category): CategoryMember[] {
+    return this.live()
+      .flatMap((stored) => {
+        const membership = this.membershipIn(category, stored);
+        return membership ? [{ contact: toSummary(stored), membership }] : [];
+      })
+      .sort((a, b) => a.contact.displayName.localeCompare(b.contact.displayName, 'he'));
+  }
+
+  private summarizeCategory(category: Category): CategorySummary {
+    return { ...category, count: this.membersOf(category).length };
   }
 
   async recentContacts(limit = 8): Promise<ContactSummary[]> {
@@ -404,7 +470,8 @@ export class MockRepository implements ContactsRepository {
         .filter((tag): tag is Tag => tag != null),
       categories: input.categoryIds
         .map((categoryId) => this.categories.find((category) => category.id === categoryId))
-        .filter((category): category is Category => category != null),
+        .filter((category): category is Category => category != null)
+        .map((category) => ({ ...category, membership: 'manual' as const })),
       specialties: input.specialties,
       languages: input.languages,
       organizations: input.organizations
@@ -813,14 +880,21 @@ export class MockRepository implements ContactsRepository {
     }
   }
 
-  async listCategories(): Promise<Category[]> {
+  async listCategories(): Promise<CategorySummary[]> {
     await this.tick();
-    return this.categories.filter((category) => category.deletedAt == null);
+    return this.liveCategories().map((category) => this.summarizeCategory(category));
+  }
+
+  async getCategory(id: Ulid): Promise<CategorySummary | null> {
+    await this.tick();
+    const category = this.liveCategories().find((candidate) => candidate.id === id);
+    return category ? this.summarizeCategory(category) : null;
   }
 
   async createCategory(input: CategoryInput): Promise<Category> {
     await this.tick();
     const now = nowIso();
+    const live = this.liveCategories();
     const category: Category = {
       id: newId(),
       createdAt: now,
@@ -834,8 +908,34 @@ export class MockRepository implements ContactsRepository {
       normalized: normalizeText(input.name),
       description: input.description,
       parentId: input.parentId,
+      icon: input.icon,
+      color: input.color,
+      rule: input.rule,
+      sortOrder: live.length === 0 ? 0 : Math.max(...live.map((c) => c.sortOrder)) + 1,
+      showOnHome: input.showOnHome,
     };
     this.categories.push(category);
+    this.pendingMutations += 1;
+    return category;
+  }
+
+  async updateCategory(id: Ulid, input: CategoryInput): Promise<Category> {
+    await this.tick();
+    const category = this.categories.find((candidate) => candidate.id === id);
+    if (!category || category.deletedAt != null) throw RepositoryError.notFound('הקטגוריה');
+    Object.assign(category, {
+      name: input.name,
+      normalized: normalizeText(input.name),
+      description: input.description,
+      parentId: input.parentId,
+      icon: input.icon,
+      color: input.color,
+      rule: input.rule,
+      showOnHome: input.showOnHome,
+      updatedAt: nowIso(),
+      version: category.version + 1,
+    });
+    this.pendingMutations += 1;
     return category;
   }
 
@@ -847,6 +947,124 @@ export class MockRepository implements ContactsRepository {
     for (const contact of this.contacts) {
       contact.categories = contact.categories.filter((candidate) => candidate.id !== id);
     }
+    for (const key of [...this.excluded]) {
+      if (key.startsWith(`${id}:`)) this.excluded.delete(key);
+    }
+    this.pendingMutations += 1;
+  }
+
+  async reorderCategories(ids: Ulid[]): Promise<void> {
+    await this.tick();
+    const position = new Map(ids.map((id, index) => [id, index]));
+    const rest = this.liveCategories().filter((category) => !position.has(category.id));
+    for (const category of this.categories) {
+      const explicit = position.get(category.id);
+      if (explicit != null) category.sortOrder = explicit;
+    }
+    rest.forEach((category, index) => {
+      category.sortOrder = ids.length + index;
+    });
+  }
+
+  async categoryMembers(id: Ulid, options: CategoryMembersOptions = {}): Promise<CategoryMembersPage> {
+    await this.tick();
+    const category = this.liveCategories().find((candidate) => candidate.id === id);
+    if (!category) throw RepositoryError.notFound('הקטגוריה');
+    let members = this.membersOf(category);
+    if (options.query) {
+      const needle = normalizeName(options.query);
+      members = members.filter((member) =>
+        normalizeName(member.contact.displayName).includes(needle),
+      );
+    }
+    const offset = options.offset ?? 0;
+    const limit = options.limit ?? 100;
+    return { items: members.slice(offset, offset + limit), total: members.length };
+  }
+
+  async previewCategoryRule(rule: CategoryRule): Promise<CategoryPreview> {
+    await this.tick();
+    const matches = this.live()
+      .filter((contact) => evaluateRule(rule, contact))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'he'));
+    return { count: matches.length, sample: matches.slice(0, 5).map(toSummary) };
+  }
+
+  async setCategoryMembership(
+    categoryId: Ulid,
+    contactId: Ulid,
+    mode: CategoryMembershipMode,
+  ): Promise<void> {
+    await this.tick();
+    const category = this.liveCategories().find((candidate) => candidate.id === categoryId);
+    if (!category) throw RepositoryError.notFound('הקטגוריה');
+    const contact = this.require(contactId);
+    const key = `${categoryId}:${contactId}`;
+
+    contact.categories = contact.categories.filter((candidate) => candidate.id !== categoryId);
+    this.excluded.delete(key);
+    if (mode === 'include') contact.categories.push({ ...category, membership: 'manual' });
+    if (mode === 'exclude') this.excluded.add(key);
+
+    this.recordChild(
+      mode === 'exclude' ? 'delete' : mode === 'include' ? 'create' : 'update',
+      'contact_category',
+      newId(),
+      category.name,
+      [contactId],
+      { mode: { from: null, to: mode } },
+    );
+  }
+
+  async suggestCategories(): Promise<CategorySuggestion[]> {
+    await this.tick();
+    const taken = new Set<string>();
+    for (const category of this.liveCategories()) {
+      taken.add(category.normalized);
+      for (const condition of category.rule?.conditions ?? []) {
+        for (const value of condition.values) taken.add(normalizeText(value));
+      }
+    }
+
+    const tally = (
+      field: CategorySuggestion['rule']['conditions'][number]['field'],
+      pick: (contact: ContactWithRelations) => string[],
+      title: (value: string) => string,
+      icon: string,
+    ): CategorySuggestion[] => {
+      const counts = new Map<string, { label: string; count: number }>();
+      for (const contact of this.live()) {
+        for (const label of new Set(pick(contact))) {
+          const key = normalizeText(label);
+          if (!key) continue;
+          const entry = counts.get(key) ?? { label, count: 0 };
+          entry.count += 1;
+          counts.set(key, entry);
+        }
+      }
+      return [...counts.entries()]
+        .filter(([key, entry]) => entry.count >= 3 && !taken.has(key) && !taken.has(normalizeText(title(entry.label))))
+        .map(([, entry]) => ({
+          name: title(entry.label),
+          description: null,
+          icon,
+          rule: {
+            match: 'all' as const,
+            conditions: [{ field, op: 'is' as const, values: [entry.label] }],
+          },
+          count: entry.count,
+        }));
+    };
+
+    // A few from each source, strongest first, so a common city cannot crowd
+    // out every profession.
+    const top = (list: CategorySuggestion[]) =>
+      list.sort((a, b) => b.count - a.count).slice(0, 4);
+    return [
+      ...top(tally('occupation', (c) => [c.profession ?? ''], (v) => v, 'briefcase')),
+      ...top(tally('tag', (c) => c.tags.map((t) => t.name), (v) => v, 'tag')),
+      ...top(tally('city', (c) => [c.city ?? ''], (v) => `אנשי קשר ב${v}`, 'map-pin')),
+    ];
   }
 
   async listOrganizations(query?: string, limit = 50): Promise<Organization[]> {

@@ -452,8 +452,8 @@ fn facet_values_for(connection: &Connection, contact_id: &str, field: &str) -> R
               WHERE ct.contact_id = ?1 AND ct.deleted_at IS NULL"
         }
         "category" => {
-            "SELECT c.name FROM contact_categories cc JOIN categories c ON c.id = cc.category_id
-              WHERE cc.contact_id = ?1 AND cc.deleted_at IS NULL"
+            "SELECT cat.name FROM category_members cm JOIN categories cat ON cat.id = cm.category_id
+              WHERE cm.contact_id = ?1"
         }
         "organization" => {
             "SELECT o.name FROM contact_organizations co JOIN organizations o ON o.id = co.organization_id

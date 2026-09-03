@@ -173,6 +173,13 @@ impl AppState {
             if let Err(error) = yanuka_db::semantic::sync_contact(connection, &engine, contact_id) {
                 eprintln!("semantic sync for {contact_id} failed: {error}");
             }
+            // Categories defined "by meaning" can only be judged once the
+            // contact's vectors are current — which is now.
+            if let Err(error) =
+                yanuka_db::categories::refresh_contact_meaning(connection, &engine, contact_id)
+            {
+                eprintln!("meaning categories for {contact_id} failed: {error}");
+            }
             Ok(())
         });
     }
@@ -274,6 +281,11 @@ fn open_ready(path: &Path, key: Option<&str>) -> Result<Connection, DbError> {
     let applied = migrate(&mut connection)?;
     if applied > 0 {
         eprintln!("applied {applied} migration(s)");
+    }
+    // The default shelves, once, into an archive that has none (ADR-038).
+    let installed = yanuka_db::categories::install_defaults(&mut connection, None)?;
+    if installed > 0 {
+        eprintln!("installed {installed} default categories");
     }
     Ok(connection)
 }

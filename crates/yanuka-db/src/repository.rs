@@ -182,10 +182,15 @@ fn write_children(
         "contact_specialties",
         "contact_languages",
         "contact_tags",
-        "contact_categories",
     ] {
         tx.execute(&format!("DELETE FROM {table} WHERE contact_id = ?1"), params![contact_id])?;
     }
+    // Manual pins are rewritten from the input; an exclusion is a decision
+    // made on the card ("not on this shelf") and survives an ordinary edit.
+    tx.execute(
+        "DELETE FROM contact_categories WHERE contact_id = ?1 AND mode = 'include'",
+        params![contact_id],
+    )?;
 
     for (index, phone) in input.phones.iter().enumerate() {
         if phone.raw.trim().is_empty() {
@@ -579,21 +584,7 @@ pub fn get_contact(connection: &Connection, id: &str) -> Result<Option<ContactWi
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut categories = connection.prepare(
-        "SELECT c.* FROM contact_categories cc JOIN categories c ON c.id = cc.category_id
-          WHERE cc.contact_id = ?1 AND cc.deleted_at IS NULL AND c.deleted_at IS NULL",
-    )?;
-    let categories: Vec<Category> = categories
-        .query_map(params![id], |row| {
-            Ok(Category {
-                id: row.get("id")?,
-                name: row.get("name")?,
-                normalized: row.get("normalized")?,
-                description: row.get("description")?,
-                parent_id: row.get("parent_id")?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let categories = crate::categories::contact_categories(connection, id)?;
 
     let specialties = simple_column(
         connection,

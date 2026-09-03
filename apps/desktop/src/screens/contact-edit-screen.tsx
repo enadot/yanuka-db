@@ -147,6 +147,11 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
       })),
       specialties: existing.specialties,
       tagIds: existing.tags.map((tag) => tag.id),
+      // Only hand-pinned categories are part of the form; rule membership is
+      // derived and an edit must not turn it into a pin.
+      categoryIds: existing.categories
+        .filter((category) => category.membership === 'manual')
+        .map((category) => category.id),
     });
   }, [existing, form, mode]);
 

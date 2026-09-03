@@ -1,3 +1,4 @@
+import type { CategoryMembership } from './category.js';
 import type {
   CountryCode,
   IsoDateTime,
@@ -122,14 +123,6 @@ export interface Tag extends SyncableEntity {
   description: string | null;
 }
 
-export interface Category extends SyncableEntity {
-  name: string;
-  normalized: string;
-  description: string | null;
-  /** Categories may nest one level (e.g. `מוסדות` › `ישיבות`). */
-  parentId: Ulid | null;
-}
-
 export interface Organization extends SyncableEntity {
   name: string;
   normalized: string;
@@ -216,7 +209,8 @@ export interface ContactWithRelations extends Contact {
   emails: ContactEmail[];
   aliases: ContactAlias[];
   tags: Tag[];
-  categories: Category[];
+  /** Effective membership: rule matches and manual pins, minus exclusions. */
+  categories: CategoryMembership[];
   specialties: string[];
   languages: LanguageCode[];
   organizations: Array<ContactOrganization & { organization: Organization }>;

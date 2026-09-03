@@ -1,0 +1,160 @@
+[
+  {
+    "name": "רבנים בחו\"ל",
+    "description": "רבני קהילות, דיינים ומורי הוראה מחוץ לישראל",
+    "icon": "globe",
+    "color": "#2563eb",
+    "showOnHome": true,
+    "rule": {
+      "match": "all",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["רב", "הרב", "דיין", "אדמו\"ר", "מורה הוראה", "ראש ישיבה", "ראש כולל", "מגיד שיעור"] },
+        { "field": "country", "op": "is_not", "values": ["IL"] }
+      ]
+    }
+  },
+  {
+    "name": "רבנים בארץ",
+    "description": "רבני קהילות, דיינים ומורי הוראה בישראל",
+    "icon": "landmark",
+    "color": "#7c3aed",
+    "showOnHome": true,
+    "rule": {
+      "match": "all",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["רב", "הרב", "דיין", "אדמו\"ר", "מורה הוראה", "ראש ישיבה", "ראש כולל", "מגיד שיעור"] },
+        { "field": "country", "op": "is", "values": ["IL"] }
+      ]
+    }
+  },
+  {
+    "name": "סופרי סת\"ם",
+    "description": "סופרים, מגיהים ובודקי סת\"ם",
+    "icon": "scroll",
+    "color": "#b45309",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["סת\"ם", "סופר סת\"ם", "מגיה", "בודק סת\"ם"] },
+        { "field": "tag", "op": "is", "values": ["סת\"ם"] }
+      ]
+    }
+  },
+  {
+    "name": "ראשי מוסדות",
+    "description": "ראשי ישיבות וכוללים, מנהלים ונשיאי מוסדות",
+    "icon": "building",
+    "color": "#0f766e",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["ראש ישיבה", "ראש כולל", "ראש בית מדרש", "ראש בית המדרש", "ראש מוסד", "מנהל", "מנהלת", "מנכ\"ל", "נשיא", "יו\"ר"] }
+      ]
+    }
+  },
+  {
+    "name": "תורמים",
+    "description": "תורמים, נדבנים ומעגלי תמיכה",
+    "icon": "hand-coins",
+    "color": "#16a34a",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["תורם", "תורמת", "נדבן", "פילנתרופ"] },
+        { "field": "tag", "op": "is", "values": ["תורם"] }
+      ]
+    }
+  },
+  {
+    "name": "עסקנים",
+    "description": "עסקנים ומקשרים",
+    "icon": "handshake",
+    "color": "#ea580c",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["עסקן", "עסקנית"] },
+        { "field": "tag", "op": "is", "values": ["עסקן"] }
+      ]
+    }
+  },
+  {
+    "name": "בעלי מלאכה",
+    "description": "אנשי מקצוע לשירותים שוטפים: חשמל, אינסטלציה, שיפוצים, הובלות",
+    "icon": "wrench",
+    "color": "#78716c",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["חשמלאי", "אינסטלטור", "שיפוצניק", "מסגר", "נגר", "מוביל", "טכנאי", "צבעי", "מנעולן", "גנן", "שרברב", "זגג", "רצף", "טייח", "מכונאי"] },
+        { "field": "tag", "op": "is", "values": ["בעל מקצוע"] }
+      ]
+    }
+  },
+  {
+    "name": "רפואה",
+    "description": "רופאים ואנשי מקצוע רפואיים",
+    "icon": "stethoscope",
+    "color": "#dc2626",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["רופא", "רופאת", "ד\"ר", "קרדיולוג", "אורתופד", "פסיכולוג", "אחות", "פרופ"] },
+        { "field": "tag", "op": "is", "values": ["רפואה"] }
+      ]
+    }
+  },
+  {
+    "name": "משפט וכספים",
+    "description": "עורכי דין, רואי חשבון, בנקאים ויועצים",
+    "icon": "scale",
+    "color": "#475569",
+    "showOnHome": true,
+    "rule": {
+      "match": "any",
+      "conditions": [
+        { "field": "occupation", "op": "contains", "values": ["עורך דין", "עורכת דין", "עו\"ד", "רואה חשבון", "רו\"ח", "יועץ מס", "בנקאי", "נוטריון", "שמאי"] },
+        { "field": "tag", "op": "is", "values": ["משפטים"] }
+      ]
+    }
+  },
+  {
+    "name": "נוספו לאחרונה",
+    "description": "אנשי קשר שנוספו למאגר בחודש האחרון",
+    "icon": "sparkles",
+    "color": "#0891b2",
+    "showOnHome": true,
+    "rule": {
+      "match": "all",
+      "conditions": [{ "field": "created", "op": "within_days", "values": ["30"] }]
+    }
+  },
+  {
+    "name": "חסרי טלפון",
+    "description": "רשומות בלי מספר טלפון — כדאי להשלים",
+    "icon": "phone-off",
+    "color": "#9f1239",
+    "showOnHome": false,
+    "rule": {
+      "match": "all",
+      "conditions": [{ "field": "phone", "op": "is_empty", "values": [] }]
+    }
+  },
+  {
+    "name": "מהמחברות",
+    "description": "אנשי קשר שיש להם עמוד מתומלל מהמחברות",
+    "icon": "notebook-pen",
+    "color": "#a16207",
+    "showOnHome": true,
+    "rule": {
+      "match": "all",
+      "conditions": [{ "field": "notes", "op": "contains", "values": ["מתוך מחברת"] }]
+    }
+  }
+]

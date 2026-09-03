@@ -142,6 +142,11 @@ the exact or fuzzy layers.
 
 ## Facets
 
+The `category` facet — and the `category` column of the FTS document — read
+the `category_members` view, so a contact selected by a smart category's
+rule is filterable and findable by that category's name exactly like one
+assigned by hand (ADR-038).
+
 Counted over the matched set in the same pass as the results, so the rows, the
 total and the filter counts are one round trip.
 

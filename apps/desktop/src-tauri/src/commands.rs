@@ -10,6 +10,7 @@
 
 use serde_json::Value;
 use tauri::State;
+use yanuka_db::categories::{self, CategoryRule};
 use yanuka_db::models::*;
 use yanuka_db::{mutation, repository, search, taxonomy, DbError};
 
@@ -289,21 +290,86 @@ pub fn delete_tag(state: State<'_, AppState>, id: String) -> Answer<()> {
     state.with(|connection| taxonomy::delete_tag(connection, &id))
 }
 
+// -- smart categories (ADR-038) ---------------------------------------------
+
 #[tauri::command]
-pub fn list_categories(state: State<'_, AppState>) -> Answer<Vec<Category>> {
-    state.with(|connection| taxonomy::list_categories(connection))
+pub fn list_categories(state: State<'_, AppState>) -> Answer<Vec<CategorySummary>> {
+    state.with(|connection| categories::list_categories(connection))
 }
 
 #[tauri::command]
-pub fn create_category(state: State<'_, AppState>, input: Value) -> Answer<Category> {
-    let name = input.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
-    let description = input.get("description").and_then(Value::as_str).map(str::to_string);
-    state.with(|connection| taxonomy::create_category(connection, &name, description.as_deref()))
+pub fn get_category(state: State<'_, AppState>, id: String) -> Answer<Option<CategorySummary>> {
+    state.with(|connection| categories::get_category(connection, &id))
+}
+
+#[tauri::command]
+pub fn create_category(state: State<'_, AppState>, input: CategoryInput) -> Answer<Category> {
+    let engine = state.semantic_engine();
+    state.with(|connection| categories::create_category(connection, &input, engine.as_deref()))
+}
+
+#[tauri::command]
+pub fn update_category(
+    state: State<'_, AppState>,
+    id: String,
+    input: CategoryInput,
+) -> Answer<Category> {
+    let engine = state.semantic_engine();
+    state.with(|connection| categories::update_category(connection, &id, &input, engine.as_deref()))
 }
 
 #[tauri::command]
 pub fn delete_category(state: State<'_, AppState>, id: String) -> Answer<()> {
-    state.with(|connection| taxonomy::delete_category(connection, &id))
+    state.with(|connection| categories::delete_category(connection, &id))
+}
+
+#[tauri::command]
+pub fn reorder_categories(state: State<'_, AppState>, ids: Vec<String>) -> Answer<()> {
+    state.with(|connection| categories::reorder_categories(connection, &ids))
+}
+
+#[tauri::command]
+pub fn category_members(
+    state: State<'_, AppState>,
+    id: String,
+    query: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Answer<CategoryMembersPage> {
+    state.with(|connection| {
+        categories::category_members(
+            connection,
+            &id,
+            query.as_deref(),
+            limit.unwrap_or(100),
+            offset.unwrap_or(0),
+        )
+    })
+}
+
+#[tauri::command]
+pub fn preview_category_rule(
+    state: State<'_, AppState>,
+    rule: CategoryRule,
+) -> Answer<CategoryPreview> {
+    let engine = state.semantic_engine();
+    state.with(|connection| categories::preview_rule(connection, &rule, engine.as_deref()))
+}
+
+#[tauri::command]
+pub fn set_category_membership(
+    state: State<'_, AppState>,
+    category_id: String,
+    contact_id: String,
+    mode: String,
+) -> Answer<()> {
+    state
+        .with(|connection| categories::set_membership(connection, &category_id, &contact_id, &mode))
+}
+
+#[tauri::command]
+pub fn suggest_categories(state: State<'_, AppState>) -> Answer<Vec<CategorySuggestion>> {
+    state.with(|connection| categories::suggest_categories(connection))
 }
 
 #[tauri::command]

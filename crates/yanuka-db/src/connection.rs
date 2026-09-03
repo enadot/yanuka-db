@@ -1,5 +1,7 @@
+use rusqlite::functions::FunctionFlags;
 use rusqlite::Connection;
 use std::path::Path;
+use yanuka_search::normalize_text;
 
 use crate::error::{DbError, Result};
 
@@ -75,6 +77,20 @@ fn configure(connection: &Connection, key: Option<&str>) -> Result<()> {
         // what matters is that the statement ran.
         connection.execute_batch(pragma)?;
     }
+
+    // The Hebrew normalizer as a SQL function, so category rules (ADR-038) can
+    // compare stored text the way the search index does — niqqud, gershayim
+    // and final letters folded — without materializing a normalized copy of
+    // every column they may read.
+    connection.create_scalar_function(
+        "yanuka_normalize",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| {
+            let value: Option<String> = context.get(0)?;
+            Ok(value.map(|text| normalize_text(&text)))
+        },
+    )?;
 
     assert_capabilities(connection)?;
     Ok(())

@@ -2,6 +2,12 @@ import type { z } from 'zod';
 import type {
   AuditLogEntry,
   Category,
+  CategoryMembersPage,
+  CategoryMembershipMode,
+  CategoryPreview,
+  CategoryRule,
+  CategorySuggestion,
+  CategorySummary,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
@@ -35,6 +41,12 @@ export type CategoryInput = z.infer<typeof CategoryInputSchema>;
 export type OrganizationInput = z.infer<typeof OrganizationInputSchema>;
 export type RelationshipInput = z.infer<typeof RelationshipInputSchema>;
 export type NoteInput = z.infer<typeof NoteInputSchema>;
+
+export interface CategoryMembersOptions {
+  query?: string;
+  limit?: number;
+  offset?: number;
+}
 
 export interface Page<T> {
   items: T[];
@@ -154,9 +166,27 @@ export interface ContactsRepository {
   createTag(input: TagInput): Promise<Tag>;
   deleteTag(id: Ulid): Promise<void>;
 
-  listCategories(): Promise<Category[]>;
+  // -- categories (ADR-038) ---------------------------------------------------
+  // Each carries its live size; ordered by `sortOrder`, then name.
+  listCategories(): Promise<CategorySummary[]>;
+  getCategory(id: Ulid): Promise<CategorySummary | null>;
   createCategory(input: CategoryInput): Promise<Category>;
+  updateCategory(id: Ulid, input: CategoryInput): Promise<Category>;
   deleteCategory(id: Ulid): Promise<void>;
+  /** Persist a new order; ids not listed keep their relative order after. */
+  reorderCategories(ids: Ulid[]): Promise<void>;
+  /** Members by name, with why each one is here; `query` narrows by name. */
+  categoryMembers(id: Ulid, options?: CategoryMembersOptions): Promise<CategoryMembersPage>;
+  /** What a rule would select right now — for the editor's live preview. */
+  previewCategoryRule(rule: CategoryRule): Promise<CategoryPreview>;
+  /** Pin a contact in, keep them out, or let the rule decide again. */
+  setCategoryMembership(
+    categoryId: Ulid,
+    contactId: Ulid,
+    mode: CategoryMembershipMode,
+  ): Promise<void>;
+  /** Shelves the data suggests: recurring professions, tags and places. */
+  suggestCategories(): Promise<CategorySuggestion[]>;
 
   listOrganizations(query?: string, limit?: number): Promise<Organization[]>;
   createOrganization(input: OrganizationInput): Promise<Organization>;

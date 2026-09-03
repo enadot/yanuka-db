@@ -21,6 +21,7 @@ import { useDebouncedValue } from '../hooks/use-debounced-value';
 import { useFavoriteContacts, useRecentContacts, useSearch } from '../hooks/use-contacts';
 import { SearchResultRow } from '../components/search/search-result-row';
 import { FacetPanel } from '../components/search/facet-panel';
+import { CategoryTiles } from '../components/categories/category-tiles';
 
 /**
  * The home screen is the search box.
@@ -176,20 +177,27 @@ function SearchResults({
   );
 }
 
-/** Favourites and recently opened, shown before anything is typed. */
+/** Category tiles, favourites and recently opened, shown before anything is typed. */
 function StartingPoints() {
   const { data: favorites = [] } = useFavoriteContacts();
   const { data: recent = [] } = useRecentContacts();
 
-  if (favorites.length === 0 && recent.length === 0) return null;
-
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      {favorites.length > 0 ? (
-        <ContactStrip title="מועדפים" icon={<Star className="size-4" />} contacts={favorites} />
-      ) : null}
-      {recent.length > 0 ? (
-        <ContactStrip title="נצפו לאחרונה" icon={<Clock className="size-4" />} contacts={recent} />
+    <div className="space-y-6">
+      <CategoryTiles />
+      {favorites.length > 0 || recent.length > 0 ? (
+        <div className="grid gap-6 md:grid-cols-2">
+          {favorites.length > 0 ? (
+            <ContactStrip title="מועדפים" icon={<Star className="size-4" />} contacts={favorites} />
+          ) : null}
+          {recent.length > 0 ? (
+            <ContactStrip
+              title="נצפו לאחרונה"
+              icon={<Clock className="size-4" />}
+              contacts={recent}
+            />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
@@ -225,9 +233,7 @@ function ContactStrip({
               />
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{contact.displayName}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {formatSubtitle(contact)}
-                </p>
+                <p className="truncate text-xs text-muted-foreground">{formatSubtitle(contact)}</p>
               </div>
             </Link>
           ))}

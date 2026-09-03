@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ContactInput, ListContactsInput, SearchInput } from '@yanuka/core';
-import type { RelationshipType, Ulid } from '@yanuka/types';
+import type { CategoryInput, ContactInput, ListContactsInput, SearchInput } from '@yanuka/core';
+import type { CategoryMembershipMode, CategoryRule, RelationshipType, Ulid } from '@yanuka/types';
 import { NoteInputSchema, RelationshipInputSchema } from '@yanuka/validation';
 import { useRepository } from '../lib/repository';
 
@@ -14,6 +14,11 @@ export const queryKeys = {
   favorites: () => ['contacts', 'favorites'] as const,
   tags: () => ['tags'] as const,
   categories: () => ['categories'] as const,
+  category: (id: Ulid) => ['categories', 'detail', id] as const,
+  categoryMembers: (id: Ulid, query: string) => ['categories', 'members', id, query] as const,
+  categorySuggestions: () => ['categories', 'suggestions'] as const,
+  categoryPreview: (rule: CategoryRule | null) =>
+    ['categories', 'preview', JSON.stringify(rule)] as const,
   organizations: (query?: string) => ['organizations', query ?? ''] as const,
   stats: () => ['stats'] as const,
   trash: () => ['contacts', 'trash'] as const,
@@ -81,6 +86,113 @@ export function useTags() {
 export function useCategories() {
   const repository = useRepository();
   return useQuery({ queryKey: queryKeys.categories(), queryFn: () => repository.listCategories() });
+}
+
+// -- smart categories (ADR-038) ---------------------------------------------
+
+export function useCategory(id: Ulid | undefined) {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.category(id ?? ''),
+    queryFn: () => repository.getCategory(id!),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCategoryMembers(id: Ulid | undefined, query = '') {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.categoryMembers(id ?? '', query),
+    queryFn: () => repository.categoryMembers(id!, { query: query || undefined, limit: 200 }),
+    enabled: Boolean(id),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useCategorySuggestions() {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.categorySuggestions(),
+    queryFn: () => repository.suggestCategories(),
+  });
+}
+
+/** Live "who would this select" while a rule is being edited. */
+export function useCategoryPreview(rule: CategoryRule | null) {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.categoryPreview(rule),
+    queryFn: () => repository.previewCategoryRule(rule!),
+    enabled: rule != null && rule.conditions.length > 0,
+    placeholderData: (previous) => previous,
+  });
+}
+
+/**
+ * A category write changes tiles, counts, contact cards and search facets at
+ * once; invalidating both namespaces is cheaper than being wrong about one.
+ */
+function useInvalidateCategories() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: ['categories'] });
+    void queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    void queryClient.invalidateQueries({ queryKey: ['search'] });
+  };
+}
+
+export function useCreateCategory() {
+  const repository = useRepository();
+  const invalidate = useInvalidateCategories();
+  return useMutation({
+    mutationFn: (input: CategoryInput) => repository.createCategory(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateCategory() {
+  const repository = useRepository();
+  const invalidate = useInvalidateCategories();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: Ulid; input: CategoryInput }) =>
+      repository.updateCategory(id, input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCategory() {
+  const repository = useRepository();
+  const invalidate = useInvalidateCategories();
+  return useMutation({
+    mutationFn: (id: Ulid) => repository.deleteCategory(id),
+    onSuccess: invalidate,
+  });
+}
+
+export function useReorderCategories() {
+  const repository = useRepository();
+  const invalidate = useInvalidateCategories();
+  return useMutation({
+    mutationFn: (ids: Ulid[]) => repository.reorderCategories(ids),
+    onSuccess: invalidate,
+  });
+}
+
+export function useSetCategoryMembership() {
+  const repository = useRepository();
+  const invalidate = useInvalidateCategories();
+  return useMutation({
+    mutationFn: ({
+      categoryId,
+      contactId,
+      mode,
+    }: {
+      categoryId: Ulid;
+      contactId: Ulid;
+      mode: CategoryMembershipMode;
+    }) => repository.setCategoryMembership(categoryId, contactId, mode),
+    onSuccess: invalidate,
+  });
 }
 
 export function useOrganizations(query?: string) {

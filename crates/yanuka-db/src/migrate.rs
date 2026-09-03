@@ -30,6 +30,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0003_ocr_notebooks",
         sql: include_str!("../../../packages/database/migrations/sqlite/0003_ocr_notebooks.sql"),
     },
+    Migration {
+        version: 4,
+        name: "0004_smart_categories",
+        sql: include_str!("../../../packages/database/migrations/sqlite/0004_smart_categories.sql"),
+    },
 ];
 
 /// Highest schema version this build can produce.

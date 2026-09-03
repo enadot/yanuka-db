@@ -1,4 +1,4 @@
-//! Tags, categories, organizations, relationships and notes.
+//! Tags, organizations, relationships and notes.
 //!
 //! Straightforward CRUD, kept out of `repository.rs` so that file stays about
 //! the contact record itself. Anything here that changes what a contact matches
@@ -142,88 +142,7 @@ pub fn delete_tag(connection: &mut Connection, id: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn list_categories(connection: &Connection) -> Result<Vec<Category>> {
-    let mut statement =
-        connection.prepare("SELECT * FROM categories WHERE deleted_at IS NULL ORDER BY name")?;
-    let rows = statement.query_map([], |row| {
-        Ok(Category {
-            id: row.get("id")?,
-            name: row.get("name")?,
-            normalized: row.get("normalized")?,
-            description: row.get("description")?,
-            parent_id: row.get("parent_id")?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-}
-
-pub fn create_category(
-    connection: &mut Connection,
-    name: &str,
-    description: Option<&str>,
-) -> Result<Category> {
-    let normalized = normalize_text(name);
-    if normalized.is_empty() {
-        return Err(DbError::Validation("יש להזין שם קטגוריה".into()));
-    }
-
-    let id = new_id();
-    let now = now_iso();
-    let tx = connection.transaction()?;
-    tx.execute(
-        "INSERT INTO categories (id, name, normalized, description, created_at, updated_at, version)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)",
-        params![id, name.trim(), normalized, description, now],
-    )?;
-    journal(
-        &tx,
-        "category",
-        &id,
-        Operation::Create,
-        Some(&json!({ "name": name.trim(), "description": description })),
-        None,
-        0,
-    )?;
-    tx.commit()?;
-
-    Ok(connection.query_row("SELECT * FROM categories WHERE id = ?1", params![id], |row| {
-        Ok(Category {
-            id: row.get("id")?,
-            name: row.get("name")?,
-            normalized: row.get("normalized")?,
-            description: row.get("description")?,
-            parent_id: row.get("parent_id")?,
-        })
-    })?)
-}
-
-pub fn delete_category(connection: &mut Connection, id: &str) -> Result<()> {
-    let affected: Vec<String> = {
-        let mut statement = connection.prepare(
-            "SELECT contact_id FROM contact_categories WHERE category_id = ?1 AND deleted_at IS NULL",
-        )?;
-        let rows = statement.query_map(params![id], |row| row.get::<_, String>(0))?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
-
-    let name: Option<String> = connection
-        .query_row("SELECT name FROM categories WHERE id = ?1", params![id], |row| row.get(0))
-        .optional()?;
-
-    let now = now_iso();
-    let tx = connection.transaction()?;
-    tx.execute("UPDATE categories SET deleted_at = ?2 WHERE id = ?1", params![id, now])?;
-    tx.execute(
-        "UPDATE contact_categories SET deleted_at = ?2 WHERE category_id = ?1",
-        params![id, now],
-    )?;
-    journal(&tx, "category", id, Operation::Delete, None, Some(&json!({ "name": name })), 0)?;
-    for contact_id in &affected {
-        reindex_contact(&tx, contact_id)?;
-    }
-    tx.commit()?;
-    Ok(())
-}
+// Categories moved to `categories.rs` (ADR-038).
 
 pub fn list_organizations(
     connection: &Connection,

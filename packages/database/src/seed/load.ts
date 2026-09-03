@@ -1,5 +1,6 @@
 import type {
   Category,
+  CategoryMembership,
   ContactAlias,
   ContactEmail,
   ContactOrganization,
@@ -99,12 +100,17 @@ export function loadSeed(dataset: SeedDataset = SEED_DATASET): LoadedSeed {
   }));
   const tagByName = new Map(tags.map((tag) => [tag.name, tag]));
 
-  const categories: Category[] = dataset.categories.map((category) => ({
+  const categories: Category[] = dataset.categories.map((category, index) => ({
     ...envelope(deterministicId(`category:${category.name}`)),
     name: category.name,
     normalized: category.name,
     description: category.description ?? null,
     parentId: null,
+    icon: category.icon ?? null,
+    color: category.color ?? null,
+    rule: category.rule ?? null,
+    sortOrder: index,
+    showOnHome: category.showOnHome ?? true,
   }));
   const categoryByName = new Map(categories.map((category) => [category.name, category]));
 
@@ -175,9 +181,10 @@ export function loadSeed(dataset: SeedDataset = SEED_DATASET): LoadedSeed {
       .map((name) => tagByName.get(normalizeKey(name)))
       .filter((tag): tag is Tag => tag != null);
 
-    const contactCategories = (seed.categories ?? [])
+    const contactCategories: CategoryMembership[] = (seed.categories ?? [])
       .map((name) => categoryByName.get(normalizeKey(name)))
-      .filter((category): category is Category => category != null);
+      .filter((category): category is Category => category != null)
+      .map((category) => ({ ...category, membership: 'manual' as const }));
 
     const organizationLinks: Array<ContactOrganization & { organization: Organization }> = [];
     (seed.organizations ?? []).forEach((link, index) => {

@@ -587,3 +587,72 @@ hand. When it is large enough, fine-tuning a small HTR model *on this
 machine* becomes the natural next iteration — the workbench then starts
 from that model's proposals instead of empty boxes, with the same
 correction loop on top.
+
+## ADR-038 — קטגוריות חכמות: מדפים שממלא כלל, עם דריסה ידנית
+
+The user asked for categories — "רבנים בחו"ל", "סופרי סת"ם" — for
+navigation on the home screen and in search, a dashboard to create and
+edit them, and "a creative way" to develop the idea. The schema already had
+a bare `categories` table with hand assignment and no UI.
+
+The creative step is that a category is a **rule, not a list**. A shelf
+like "רבנים בחו"ל" is *defined* — occupation contains רב/דיין and country
+is not Israel — and the archive fills it. New contacts land on the right
+shelves as they are entered; a profession corrected on a card moves the
+person; a note transcribed from a notebook puts them on "מהמחברות". Hand
+work is reserved for exceptions: a person can be pinned in or kept out,
+and the card says which ("לפי הכלל" / "ידני").
+
+Decisions, and what each buys:
+
+- **Vocabulary, not a query language.** A condition is *field · operator ·
+  values*: fourteen fields named the way the user thinks (`occupation` is
+  profession, role, title and prefix together; `notes` is every note
+  field), eight operators, values OR-ed within a condition, conditions
+  AND-ed or OR-ed. It reads as a sentence in the editor and is described
+  as one on the dashboard. `contains` is a **word-start** match on
+  normalized text: `רב` finds `רבנים`, not `ערב` — a two-letter substring
+  would have pulled in half the archive.
+- **Two evaluators, one contract.** `packages/core/src/category-rules.ts`
+  evaluates in TypeScript for the browser build; `categories.rs` compiles
+  the same rule to SQL over `contacts c` (with the Hebrew normalizer
+  registered as the SQL function `yanuka_normalize`). The contract suite
+  runs the same scenarios against both; drift fails CI.
+- **Cached, not computed on read.** Rule matches live in
+  `category_matches`, refreshed by `reindex_contact` at the end of every
+  mutating transaction — the same hook that keeps FTS honest — and rebuilt
+  per category when a rule is edited. The `category_members` view joins
+  cache and manual rows into one definition of membership that the FTS
+  document, the facet, the card and the counts all read. Consequence:
+  typing a category's *name* finds its members, and the category facet
+  filters by effective membership, with no special-casing in search.
+- **Exclusions survive edits.** `contact_categories.mode` is
+  `include`/`exclude`; an ordinary contact edit rewrites pins from the
+  form but never touches exclusions — "not on this shelf" is a decision
+  made on the card, not a field of the form.
+- **Meaning as a condition.** `similar` compares the archive's stored
+  vectors (ADR-036) to a free sentence, cosine ≥ 0.82 — stricter than
+  search's 0.80 because there is no lexical layer to anchor it. Only the
+  desktop has the model, so such rules are refreshed after a contact's
+  vectors are synced; the browser demo approximates with word overlap.
+- **Defaults, once.** Twelve shelves are installed into an archive that has
+  none, then a marker is set; a user who deletes them is not
+  second-guessed. The same JSON seeds the browser demo (through the
+  migrations generator) and the Rust installer (`include_str!`).
+- **Suggestions from the data.** Recurring professions, tags and cities
+  without a shelf are offered on the dashboard with their counts; one
+  click opens the editor pre-filled.
+
+Rejected: tags alone (no rule, no home tiles — the request was navigation
+that stays current without upkeep); saved searches (a result list, not a
+membership the card can explain or the user can override); SQL triggers
+(cannot see joined tables or call the normalizer); computing membership on
+every read (correct but makes facets and FTS special cases, and counts on
+the home screen cost a rule evaluation per tile per paint).
+
+Consequences: `reindex_contact` is now also the categories reconciler, so
+every write path pays one predicate per rule category (hundreds of
+microseconds; thousands of contacts × a dozen rules on a rebuild is well
+under a second). Renaming a category reindexes its members. `category`
+facets and `category` FTS hits now include rule members, which is the
+point. Nesting (`parent_id`) remains in the schema and unused.

@@ -27,6 +27,7 @@ import {
 } from '@yanuka/ui';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { CategoryPill } from '../components/categories/category-icon';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
 import {
   backupNow,
@@ -391,12 +392,22 @@ export function SettingsScreen() {
           </div>
           <Separator />
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              קטגוריות (<span className="numeric">{categories.length}</span>)
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                קטגוריות (<span className="numeric">{categories.length}</span>)
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/categories">ניהול הקטגוריות</Link>
+              </Button>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {categories.map((category) => (
-                <TagPill key={category.id} name={category.name} />
+                <CategoryPill
+                  key={category.id}
+                  name={`${category.name} · ${category.count}`}
+                  icon={category.icon}
+                  color={category.color}
+                />
               ))}
             </div>
           </div>

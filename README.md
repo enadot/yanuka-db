@@ -34,6 +34,7 @@ Then try:
 | `Friedman` | the same person, by Latin transliteration |
 | `+972 54 555 0134` | a contact, by a number in a different format |
 | `Ctrl` + `K` | the command palette, from anywhere |
+| a category tile on the home screen | everyone on that shelf — filled by a rule, kept by hand |
 
 The desktop application (Tauri + SQLite) is built by CI on Windows; every
 tagged version is published on the repository's **Releases** page with the
@@ -178,4 +179,5 @@ Designed and deliberately deferred, each with its cost recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
 enforcement, and the web and Android clients. Local semantic search shipped
 in 0.7.0 (ADR-036); notebook import with a self-learning handwriting memory
-shipped in 0.8.0 (ADR-037) — both entirely on the machine.
+shipped in 0.8.0 (ADR-037); smart, rule-driven categories with home-screen
+navigation shipped in 0.9.0 (ADR-038) — all entirely on the machine.

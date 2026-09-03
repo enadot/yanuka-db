@@ -10,6 +10,7 @@
 //! ```
 
 pub mod backup;
+pub mod categories;
 pub mod connection;
 pub mod encryption;
 pub mod error;

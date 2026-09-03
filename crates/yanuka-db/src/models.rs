@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::categories::CategoryRule;
+
 pub type Ulid = String;
 pub type IsoDateTime = String;
 
@@ -81,6 +83,8 @@ pub struct Tag {
     pub description: Option<String>,
 }
 
+/// A shelf in the archive (ADR-038): a face, a position, and optionally a
+/// rule that fills it. Mirrors `Category` in @yanuka/types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Category {
@@ -89,6 +93,87 @@ pub struct Category {
     pub normalized: String,
     pub description: Option<String>,
     pub parent_id: Option<Ulid>,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub rule: Option<CategoryRule>,
+    pub sort_order: i64,
+    pub show_on_home: bool,
+}
+
+/// A category with its live size.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySummary {
+    #[serde(flatten)]
+    pub category: Category,
+    pub count: i64,
+}
+
+/// A category on a contact's card: `rule` or `manual`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryMembership {
+    #[serde(flatten)]
+    pub category: Category,
+    pub membership: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryMember {
+    pub contact: ContactSummary,
+    pub membership: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryMembersPage {
+    pub items: Vec<CategoryMember>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryPreview {
+    pub count: i64,
+    pub sample: Vec<ContactSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySuggestion {
+    pub name: String,
+    pub description: Option<String>,
+    pub icon: Option<String>,
+    pub rule: CategoryRule,
+    pub count: i64,
+}
+
+/// Fields a user can edit on a category. Mirrors `CategoryInputSchema`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CategoryInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub parent_id: Option<Ulid>,
+    pub icon: Option<String>,
+    pub color: Option<String>,
+    pub rule: Option<CategoryRule>,
+    pub show_on_home: bool,
+}
+
+impl Default for CategoryInput {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            description: None,
+            parent_id: None,
+            icon: None,
+            color: None,
+            rule: None,
+            show_on_home: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,7 +293,8 @@ pub struct ContactWithRelations {
     pub emails: Vec<ContactEmail>,
     pub aliases: Vec<ContactAlias>,
     pub tags: Vec<Tag>,
-    pub categories: Vec<Category>,
+    /// Effective membership: rule matches and manual pins, minus exclusions.
+    pub categories: Vec<CategoryMembership>,
     pub specialties: Vec<String>,
     pub languages: Vec<String>,
     pub organizations: Vec<ContactOrganizationLink>,

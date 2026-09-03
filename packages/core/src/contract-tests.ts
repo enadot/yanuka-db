@@ -459,5 +459,230 @@ export function runRepositoryContractTests(
       expect(stats.contacts).toBeGreaterThanOrEqual(0);
       expect(stats.sync).toBeDefined();
     });
+
+    // -- smart categories (ADR-038) -------------------------------------------
+
+    const scribeRule = {
+      match: 'all' as const,
+      conditions: [{ field: 'occupation' as const, op: 'contains' as const, values: ['סופר'] }],
+    };
+
+    it('a rule fills a category, and the contact card explains why', async () => {
+      const repo = await makeRepository();
+      const scribe = await repo.createContact({
+        ...blankContact,
+        displayName: 'סופר לבדיקה',
+        profession: 'סופר סת"ם',
+      });
+      await repo.createContact({ ...blankContact, displayName: 'לא סופר', profession: 'חשמלאי' });
+
+      const category = await repo.createCategory({
+        name: 'סופרים לבדיקה',
+        description: null,
+        parentId: null,
+        icon: 'scroll',
+        color: '#b45309',
+        rule: scribeRule,
+        showOnHome: true,
+      });
+
+      const summaries = await repo.listCategories();
+      const summary = summaries.find((candidate) => candidate.id === category.id);
+      expect(summary?.count).toBeGreaterThanOrEqual(1);
+
+      const members = await repo.categoryMembers(category.id);
+      const names = members.items.map((member) => member.contact.displayName);
+      expect(names).toContain('סופר לבדיקה');
+      expect(names).not.toContain('לא סופר');
+      expect(members.items.find((m) => m.contact.id === scribe.id)?.membership).toBe('rule');
+
+      const card = await repo.getContact(scribe.id);
+      const onCard = card?.categories.find((c) => c.id === category.id);
+      expect(onCard?.membership).toBe('rule');
+    });
+
+    it('membership follows the record: change the profession and the shelf updates', async () => {
+      const repo = await makeRepository();
+      const category = await repo.createCategory({
+        name: 'קליגרפים',
+        description: null,
+        parentId: null,
+        icon: null,
+        color: null,
+        rule: {
+          match: 'all',
+          conditions: [{ field: 'occupation', op: 'contains', values: ['קליגרף'] }],
+        },
+        showOnHome: true,
+      });
+      const created = await repo.createContact({
+        ...blankContact,
+        displayName: 'עוד מעט קליגרף',
+        profession: 'מלמד',
+      });
+      const names = async () =>
+        (await repo.categoryMembers(category.id)).items.map((m) => m.contact.displayName);
+      expect(await names()).not.toContain('עוד מעט קליגרף');
+
+      await repo.updateContact(created.id, { profession: 'קליגרף' }, created.version);
+      expect(await names()).toContain('עוד מעט קליגרף');
+      expect((await repo.getCategory(category.id))?.count).toBe(1);
+
+      const updated = await repo.getContact(created.id);
+      await repo.updateContact(created.id, { profession: 'מלמד' }, updated!.version);
+      expect(await names()).not.toContain('עוד מעט קליגרף');
+    });
+
+    it('a person can be pinned in, kept out, and handed back to the rule', async () => {
+      const repo = await makeRepository();
+      const category = await repo.createCategory({
+        name: 'סופרים עם חריגים',
+        description: null,
+        parentId: null,
+        icon: null,
+        color: null,
+        rule: scribeRule,
+        showOnHome: true,
+      });
+      const scribe = await repo.createContact({
+        ...blankContact,
+        displayName: 'סופר מודר',
+        profession: 'סופר',
+      });
+      const outsider = await repo.createContact({
+        ...blankContact,
+        displayName: 'מצורף ביד',
+        profession: 'נגר',
+      });
+
+      await repo.setCategoryMembership(category.id, scribe.id, 'exclude');
+      await repo.setCategoryMembership(category.id, outsider.id, 'include');
+
+      let members = await repo.categoryMembers(category.id);
+      expect(members.items.map((m) => m.contact.displayName)).not.toContain('סופר מודר');
+      expect(members.items.find((m) => m.contact.id === outsider.id)?.membership).toBe('manual');
+
+      await repo.setCategoryMembership(category.id, scribe.id, 'auto');
+      await repo.setCategoryMembership(category.id, outsider.id, 'auto');
+      members = await repo.categoryMembers(category.id);
+      expect(members.items.map((m) => m.contact.displayName)).toContain('סופר מודר');
+      expect(members.items.map((m) => m.contact.displayName)).not.toContain('מצורף ביד');
+    });
+
+    it('editing the rule re-selects the members, and a preview never writes', async () => {
+      const repo = await makeRepository();
+      await repo.createContact({ ...blankContact, displayName: 'נגר לבדיקה', profession: 'נגר' });
+      const category = await repo.createCategory({
+        name: 'כלל שמתחלף',
+        description: null,
+        parentId: null,
+        icon: null,
+        color: null,
+        rule: scribeRule,
+        showOnHome: true,
+      });
+
+      const carpenters = {
+        match: 'all' as const,
+        conditions: [{ field: 'occupation' as const, op: 'contains' as const, values: ['נגר'] }],
+      };
+      const before = (await repo.getCategory(category.id))?.count;
+      const preview = await repo.previewCategoryRule(carpenters);
+      expect(preview.count).toBeGreaterThanOrEqual(1);
+      expect(preview.sample.map((c) => c.displayName)).toContain('נגר לבדיקה');
+      // Previewing a different rule changed nothing on the stored category.
+      expect((await repo.getCategory(category.id))?.count).toBe(before);
+
+      await repo.updateCategory(category.id, {
+        name: 'נגרים',
+        description: null,
+        parentId: null,
+        icon: 'wrench',
+        color: null,
+        rule: carpenters,
+        showOnHome: false,
+      });
+      const after = await repo.getCategory(category.id);
+      expect(after?.name).toBe('נגרים');
+      expect(after?.showOnHome).toBe(false);
+      const members = await repo.categoryMembers(category.id);
+      expect(members.items.map((m) => m.contact.displayName)).toContain('נגר לבדיקה');
+      expect(members.items.map((m) => m.contact.displayName)).not.toContain('סופר לבדיקה');
+    });
+
+    it('a rule category is searchable by its name and filterable as a facet', async () => {
+      const repo = await makeRepository();
+      await repo.createContact({
+        ...blankContact,
+        displayName: 'שרברב מהכלל',
+        profession: 'שרברב',
+      });
+      await repo.createCategory({
+        name: 'אינסטלציה',
+        description: null,
+        parentId: null,
+        icon: null,
+        color: null,
+        rule: {
+          match: 'all',
+          conditions: [{ field: 'occupation', op: 'contains', values: ['שרברב'] }],
+        },
+        showOnHome: true,
+      });
+
+      const byName = await repo.search({
+        text: 'אינסטלציה',
+        sort: 'relevance',
+        limit: 20,
+        offset: 0,
+        favoritesOnly: false,
+        includeDeleted: false,
+      });
+      expect(byName.results.map((r) => r.contact.displayName)).toContain('שרברב מהכלל');
+
+      const filtered = await repo.search({
+        text: '',
+        filters: { category: ['אינסטלציה'] },
+        sort: 'name',
+        limit: 20,
+        offset: 0,
+        favoritesOnly: false,
+        includeDeleted: false,
+      });
+      expect(filtered.results.map((r) => r.contact.displayName)).toContain('שרברב מהכלל');
+    });
+
+    it('orders categories as asked and deletes cleanly', async () => {
+      const repo = await makeRepository();
+      const blank = { description: null, parentId: null, icon: null, color: null, rule: null, showOnHome: true };
+      const first = await repo.createCategory({ ...blank, name: 'סדר א' });
+      const second = await repo.createCategory({ ...blank, name: 'סדר ב' });
+
+      await repo.reorderCategories([second.id, first.id]);
+      const ordered = (await repo.listCategories())
+        .filter((c) => c.id === first.id || c.id === second.id)
+        .map((c) => c.id);
+      expect(ordered).toEqual([second.id, first.id]);
+
+      await repo.deleteCategory(first.id);
+      expect(await repo.getCategory(first.id)).toBeNull();
+      expect((await repo.listCategories()).some((c) => c.id === first.id)).toBe(false);
+    });
+
+    it('suggests shelves from recurring professions', async () => {
+      const repo = await makeRepository();
+      for (let index = 0; index < 4; index += 1) {
+        await repo.createContact({
+          ...blankContact,
+          displayName: `שדכן ${index}`,
+          profession: 'שדכן',
+        });
+      }
+      const suggestions = await repo.suggestCategories();
+      const match = suggestions.find((suggestion) => suggestion.name.includes('שדכן'));
+      expect(match).toBeDefined();
+      expect(match!.count).toBeGreaterThanOrEqual(4);
+      expect(match!.rule.conditions[0]?.values).toContain('שדכן');
+    });
   });
 }

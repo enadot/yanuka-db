@@ -5,6 +5,8 @@ import { HomeScreen } from './screens/home-screen';
 import { ContactListScreen } from './screens/contact-list-screen';
 import { ContactDetailScreen } from './screens/contact-detail-screen';
 import { ContactEditScreen } from './screens/contact-edit-screen';
+import { CategoriesScreen } from './screens/categories-screen';
+import { CategoryScreen } from './screens/category-screen';
 import { SettingsScreen } from './screens/settings-screen';
 import { ImportScreen } from './screens/import-screen';
 import { NotebooksScreen } from './screens/notebooks-screen';
@@ -36,6 +38,8 @@ export function App() {
         <Route path="contacts/new" element={<ContactEditScreen mode="create" />} />
         <Route path="contacts/:id" element={<ContactDetailScreen />} />
         <Route path="contacts/:id/edit" element={<ContactEditScreen mode="edit" />} />
+        <Route path="categories" element={<CategoriesScreen />} />
+        <Route path="categories/:id" element={<CategoryScreen />} />
         <Route path="settings" element={<SettingsScreen />} />
         <Route path="import" element={<ImportScreen />} />
         <Route path="notebooks" element={<NotebooksScreen />} />

@@ -39,6 +39,8 @@ import {
   TooltipTrigger,
 } from '@yanuka/ui';
 import { toast } from 'sonner';
+import { CategoryPill } from '../components/categories/category-icon';
+import { CategoryMembershipMenu } from '../components/categories/category-membership-menu';
 import { HistoryCard } from '../components/contact/history-card';
 import { NotesCard } from '../components/contact/notes-card';
 import { RelationshipsCard } from '../components/contact/relationships-card';
@@ -148,10 +150,16 @@ export function ContactDetailScreen() {
               <TagPill key={tag.id} name={tag.name} color={tag.color} />
             ))}
             {contact.categories.map((category) => (
-              <Badge key={category.id} variant="outline" className="font-normal">
-                {category.name}
-              </Badge>
+              <CategoryPill
+                key={category.id}
+                name={category.name}
+                icon={category.icon}
+                color={category.color}
+                membership={category.membership}
+                onClick={() => navigate(`/categories/${category.id}`)}
+              />
             ))}
+            <CategoryMembershipMenu contact={contact} />
           </div>
         </div>
 

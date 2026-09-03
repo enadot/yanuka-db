@@ -477,6 +477,42 @@ pub fn status(connection: &Connection) -> Result<IndexStatus> {
 /// Vectors are normalized at write time, so similarity is a dot product; a
 /// contact is scored by its best document, and `exclude` keeps the semantic
 /// layer additive — it never re-ranks a contact the lexical layers found.
+/// Every live contact with a document at or above `min_cosine` to `text` —
+/// the set a category's `meaning` condition selects (ADR-038).
+pub fn similar_contacts(
+    connection: &Connection,
+    engine: &SemanticEngine,
+    text: &str,
+    min_cosine: f32,
+) -> Result<HashSet<String>> {
+    let query_vector = engine.embed_query(text)?;
+    let mut statement = connection.prepare(
+        "SELECT s.contact_id, s.vector
+           FROM semantic_index s JOIN contacts c ON c.id = s.contact_id
+          WHERE s.model = ?1 AND c.deleted_at IS NULL",
+    )?;
+    let rows = statement.query_map(params![MODEL_TAG], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+    })?;
+    let mut similar = HashSet::new();
+    for row in rows {
+        let (contact_id, bytes) = row?;
+        if similar.contains(&contact_id) {
+            continue;
+        }
+        let score: f32 = bytes
+            .chunks_exact(4)
+            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .zip(&query_vector)
+            .map(|(stored, query)| stored * query)
+            .sum();
+        if score >= min_cosine {
+            similar.insert(contact_id);
+        }
+    }
+    Ok(similar)
+}
+
 pub fn candidates(
     connection: &Connection,
     engine: &SemanticEngine,

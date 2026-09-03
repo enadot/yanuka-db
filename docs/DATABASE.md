@@ -82,6 +82,28 @@ Four columns, and each earns its place:
 
 ## Search tables
 
+### Categories (ADR-038)
+
+`categories` carries the shelf's face and rule: `icon`, `color`,
+`sort_order`, `show_on_home`, and `rule` — a serialized `CategoryRule`
+from `@yanuka/types`, or NULL for a hand-filled shelf. `contact_categories`
+is the manual layer, with `mode IN ('include', 'exclude')`. Rule matches
+are cached in `category_matches` (derived, rebuildable, never synced),
+maintained by `reindex_contact` inside every mutating transaction and
+rebuilt per category when its rule changes. The `category_members` view is
+the one definition of membership every reader uses — the FTS document, the
+facet, the contact card and the counts:
+
+```sql
+SELECT category_id, contact_id,
+       CASE WHEN cc.id IS NOT NULL THEN 'manual' ELSE 'rule' END AS membership
+  … WHERE (matched OR pinned) AND NOT excluded
+```
+
+The Hebrew normalizer is registered on every connection as the SQL function
+`yanuka_normalize(text)`, which is what lets a rule compare `profession`
+against `סת"ם` the way the search index would.
+
 ```sql
 CREATE VIRTUAL TABLE contact_fts USING fts5(
   contact_id UNINDEXED, name, aliases, profession, role, specialties,
