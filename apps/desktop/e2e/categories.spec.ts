@@ -57,3 +57,19 @@ test('a person can be taken off a shelf from the card, and put back', async ({ p
   await page.keyboard.press('Escape');
   await expect(page.getByText('סופרי סת"ם', { exact: true })).toBeVisible();
 });
+
+test('a checked switch keeps its thumb inside the track in RTL', async ({ page }) => {
+  await page.goto('/#/categories');
+  const checked = page.getByRole('switch', { checked: true }).first();
+  await expect(checked).toBeVisible();
+
+  const track = await checked.boundingBox();
+  const thumb = await checked.locator('[data-slot="switch-thumb"]').boundingBox();
+  expect(track && thumb).toBeTruthy();
+  // The registry default translates the thumb to the right; in an RTL
+  // document that pushed it out of the frame.
+  expect(thumb!.x).toBeGreaterThanOrEqual(track!.x - 0.5);
+  expect(thumb!.x + thumb!.width).toBeLessThanOrEqual(track!.x + track!.width + 0.5);
+  // And it really moved to the far (left) end, not just stayed put.
+  expect(thumb!.x).toBeLessThan(track!.x + track!.width / 2);
+});
