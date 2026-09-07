@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
 use yanuka_db::rusqlite::Connection;
@@ -40,6 +41,16 @@ struct Semantic {
     catching_up: bool,
 }
 
+/// The live half of the sync indicator: what only the worker knows.
+struct SyncLive {
+    /// The last cycle reached the server.
+    online: bool,
+    /// A cycle is running right now.
+    syncing: bool,
+    /// Wakes the worker; `None` until the worker is spawned.
+    kick: Option<SyncSender<()>>,
+}
+
 /// The open database, guarded for shared access across IPC calls.
 ///
 /// A single connection behind a mutex rather than a pool: SQLite in WAL mode
@@ -51,6 +62,10 @@ pub struct AppState {
     inner: Mutex<DbState>,
     security: Mutex<Security>,
     semantic: Mutex<Semantic>,
+    sync: Mutex<SyncLive>,
+    /// One sync cycle at a time; a second request while one runs is answered
+    /// with the current state rather than queued behind it.
+    cycle: Mutex<()>,
     /// Where the database lives, for the backup commands.
     database_path: PathBuf,
 }
@@ -123,6 +138,8 @@ impl AppState {
                 pending: 0,
                 catching_up: false,
             }),
+            sync: Mutex::new(SyncLive { online: false, syncing: false, kick: None }),
+            cycle: Mutex::new(()),
             database_path: path.to_path_buf(),
         }
     }
@@ -182,6 +199,43 @@ impl AppState {
             }
             Ok(())
         });
+    }
+
+    // -- sync (ADR-039) ---------------------------------------------------
+
+    pub fn set_sync_kick(&self, kick: SyncSender<()>) {
+        let mut live = self.sync.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        live.kick = Some(kick);
+    }
+
+    /// Ask the worker for a cycle soon. A full channel means one is already
+    /// queued, which is the same thing.
+    pub fn kick_sync(&self) {
+        let live = self.sync.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(kick) = &live.kick {
+            let _ = kick.try_send(());
+        }
+    }
+
+    pub fn set_syncing(&self, syncing: bool) {
+        let mut live = self.sync.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        live.syncing = syncing;
+    }
+
+    pub fn set_online(&self, online: bool) {
+        let mut live = self.sync.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        live.online = online;
+    }
+
+    /// `(online, syncing)` for the indicator.
+    pub fn sync_flags(&self) -> (bool, bool) {
+        let live = self.sync.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        (live.online, live.syncing)
+    }
+
+    /// The cycle guard; `None` when a cycle is already running.
+    pub fn try_cycle(&self) -> Option<std::sync::MutexGuard<'_, ()>> {
+        self.cycle.try_lock().ok()
     }
 
     /// Open the locked database with a recovery key the user supplied, then
@@ -269,6 +323,14 @@ impl AppState {
             DbState::Ready(connection) => f(connection),
             DbState::Locked => Err(DbError::Locked),
         }
+    }
+}
+
+/// The engine borrows the database through the same guarded path every IPC
+/// call uses, and releases it between network calls.
+impl yanuka_db::sync::Database for AppState {
+    fn with<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T, DbError>) -> Result<T, DbError> {
+        AppState::with(self, f)
     }
 }
 

@@ -18,15 +18,19 @@ import type {
   CategoryRule,
   CategorySuggestion,
   CategorySummary,
+  ConflictResolution,
+  ConflictView,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
   FacetField,
   Note,
   Organization,
+  PairCode,
   Relationship,
   SearchResponse,
   SearchSuggestion,
+  SyncOverview,
   Tag,
   Ulid,
 } from '@yanuka/types';
@@ -37,6 +41,7 @@ import { evaluateRule } from './category-rules.js';
 import type {
   CategoryInput,
   CategoryMembersOptions,
+  ConnectSyncInput,
   ContactInput,
   ContactsRepository,
   DatabaseStats,
@@ -72,6 +77,82 @@ function snippet(text: string): string {
   const LIMIT = 60;
   if ([...text].length <= LIMIT) return text;
   return `${[...text].slice(0, LIMIT).join('').trimEnd()}…`;
+}
+
+/** Write a conflict's remote value back onto the in-memory contact. */
+function applyRemoteValue(contact: ContactWithRelations, field: string, value: unknown): void {
+  if (field === 'phones' && Array.isArray(value)) {
+    const template = contact.phones[0];
+    contact.phones = value.map((entry, index) => {
+      const phone = entry as { raw?: unknown; kind?: string; label?: string | null; isPrimary?: boolean };
+      const raw = String(phone.raw ?? '');
+      const normalized = normalizePhone(raw, contact.country);
+      return {
+        id: newId(),
+        createdAt: template?.createdAt ?? nowIso(),
+        updatedAt: nowIso(),
+        createdBy: null,
+        updatedBy: null,
+        version: 1,
+        deviceId: 'sync',
+        deletedAt: null,
+        contactId: contact.id,
+        kind: (phone.kind ?? 'mobile') as ContactWithRelations['phones'][number]['kind'],
+        raw: normalized.raw,
+        e164: normalized.e164,
+        digits: normalized.digits,
+        countryCode: normalized.countryCode ?? contact.country,
+        isPrimary: Boolean(phone.isPrimary) || index === 0,
+        label: phone.label ?? null,
+      };
+    });
+    return;
+  }
+  if (field in contact) {
+    (contact as unknown as Record<string, unknown>)[field] = value;
+  }
+}
+
+/**
+ * One conflict the demo ships with, so the conflicts screen has something to
+ * show and the UI tests something to resolve: the scribe's phone was
+ * corrected differently on two machines.
+ */
+function demoConflicts(contacts: ContactWithRelations[]): ConflictView[] {
+  const subject = contacts.find((contact) => contact.displayName === 'ישראל סופר');
+  if (!subject) return [];
+  const local = subject.phones.map((phone) => ({
+    kind: phone.kind,
+    raw: phone.raw,
+    label: phone.label,
+    isPrimary: phone.isPrimary,
+  }));
+  const remote = local.map((phone, index) =>
+    index === 0 ? { ...phone, raw: '052-9990001' } : phone,
+  );
+  return [
+    {
+      id: 'demo-conflict-phones',
+      entityType: 'contact',
+      entityId: subject.id,
+      entityLabel: subject.displayName,
+      fields: [
+        {
+          field: 'phones',
+          localValue: local,
+          remoteValue: remote,
+          localUpdatedAt: subject.updatedAt,
+          remoteUpdatedAt: subject.updatedAt,
+          localDeviceId: 'browser',
+          remoteDeviceId: 'demo-laptop',
+        },
+      ],
+      detectedAt: subject.updatedAt,
+      resolvedAt: null,
+      resolution: null,
+      remoteDeviceName: 'המחשב הנייד',
+    },
+  ];
 }
 
 /**
@@ -112,6 +193,10 @@ export class MockRepository implements ContactsRepository {
   private relationships: Relationship[];
   private audit: Array<AuditLogEntry & { related?: Ulid[] }> = [];
   private pendingMutations = 0;
+  /** The pretend pairing, so the settings screen can be exercised in a browser. */
+  private sync: { serverUrl: string; serverName: string; deviceName: string; lastSyncAt: string } | null =
+    null;
+  private conflicts: ConflictView[] = [];
 
   /** Artificial latency so loading and empty states are exercised in the UI. */
   constructor(
@@ -123,6 +208,7 @@ export class MockRepository implements ContactsRepository {
     this.categories = seed.categories;
     this.organizations = seed.organizations;
     this.relationships = seed.relationships;
+    this.conflicts = demoConflicts(seed.contacts);
   }
 
   private async tick(): Promise<void> {
@@ -1227,15 +1313,98 @@ export class MockRepository implements ContactsRepository {
       tags: this.tags.filter((tag) => tag.deletedAt == null).length,
       relationships: this.relationships.length,
       notes: this.live().reduce((total, contact) => total + contact.contactNotes.length, 0),
-      sync: {
-        online: false,
-        lastSyncAt: null,
-        pendingMutations: this.pendingMutations,
-        failedMutations: 0,
-        openConflicts: 0,
-        syncing: false,
-      },
+      sync: this.syncState(),
     };
+  }
+
+  private syncState() {
+    return {
+      online: this.sync !== null,
+      lastSyncAt: this.sync?.lastSyncAt ?? null,
+      pendingMutations: this.pendingMutations,
+      failedMutations: 0,
+      openConflicts: this.conflicts.filter((conflict) => conflict.resolvedAt == null).length,
+      syncing: false,
+    };
+  }
+
+  // -- sync (ADR-039) ---------------------------------------------------------
+  // The browser build has no server. Pairing is pretended so the screens can
+  // be walked through; the conflicts are real objects with real resolution
+  // semantics against the in-memory contacts, which is what the UI tests need.
+
+  async syncOverview(): Promise<SyncOverview> {
+    await this.tick();
+    return {
+      ...this.syncState(),
+      configured: this.sync !== null,
+      serverUrl: this.sync?.serverUrl ?? null,
+      serverName: this.sync?.serverName ?? null,
+      deviceId: 'browser',
+      deviceName: this.sync?.deviceName ?? null,
+      lastError: null,
+    };
+  }
+
+  async connectSync(input: ConnectSyncInput): Promise<SyncOverview> {
+    await this.tick();
+    const serverUrl = input.serverUrl.trim().replace(/\/+$/, '');
+    if (!serverUrl) throw RepositoryError.validation('יש להזין את כתובת השרת');
+    if (!input.code.trim()) throw RepositoryError.validation('יש להזין את קוד הצימוד');
+    this.sync = {
+      serverUrl: /^https?:\/\//.test(serverUrl) ? serverUrl : `http://${serverUrl}`,
+      serverName: 'שרת הדגמה',
+      deviceName: input.deviceName?.trim() || 'הדפדפן הזה',
+      lastSyncAt: nowIso(),
+    };
+    this.pendingMutations = 0;
+    return this.syncOverview();
+  }
+
+  async disconnectSync(): Promise<SyncOverview> {
+    await this.tick();
+    this.sync = null;
+    return this.syncOverview();
+  }
+
+  async syncNow(): Promise<SyncOverview> {
+    await this.tick();
+    if (this.sync) {
+      this.sync.lastSyncAt = nowIso();
+      this.pendingMutations = 0;
+    }
+    return this.syncOverview();
+  }
+
+  async createPairCode(): Promise<PairCode> {
+    await this.tick();
+    if (!this.sync) throw RepositoryError.validation('המכשיר הזה אינו מחובר לשרת');
+    return { code: 'DEMO-CODE', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
+  }
+
+  async listConflicts(): Promise<ConflictView[]> {
+    await this.tick();
+    return this.conflicts.filter((conflict) => conflict.resolvedAt == null);
+  }
+
+  async resolveConflict(id: Ulid, resolution: ConflictResolution): Promise<void> {
+    await this.tick();
+    const conflict = this.conflicts.find(
+      (candidate) => candidate.id === id && candidate.resolvedAt == null,
+    );
+    if (!conflict) throw RepositoryError.notFound('ההתנגשות');
+    if (resolution === 'remote' && conflict.entityType === 'contact') {
+      const contact = this.contacts.find((candidate) => candidate.id === conflict.entityId);
+      if (contact) {
+        for (const field of conflict.fields) {
+          applyRemoteValue(contact, field.field, field.remoteValue);
+        }
+        contact.updatedAt = nowIso();
+      }
+    }
+    conflict.resolvedAt = nowIso();
+    conflict.resolution = resolution;
+    if (resolution !== 'remote') this.pendingMutations += 1;
   }
 
   async auditLog(entityId?: Ulid, limit = 50): Promise<AuditLogEntry[]> {

@@ -460,6 +460,46 @@ export function runRepositoryContractTests(
       expect(stats.sync).toBeDefined();
     });
 
+    // -- sync (ADR-039) ---------------------------------------------------------
+
+    it('describes the pairing, and pairing needs an address and a code', async () => {
+      const repo = await makeRepository();
+      const overview = await repo.syncOverview();
+      expect(typeof overview.configured).toBe('boolean');
+      expect(typeof overview.deviceId).toBe('string');
+      expect(overview.pendingMutations).toBeGreaterThanOrEqual(0);
+      expect(overview.openConflicts).toBeGreaterThanOrEqual(0);
+      await expect(repo.connectSync({ serverUrl: '', code: 'ABCD-EFGH' })).rejects.toMatchObject({
+        code: 'validation',
+      });
+    });
+
+    it('lists open conflicts with both values, and settles them either way', async () => {
+      const repo = await makeRepository();
+      const open = await repo.listConflicts();
+      for (const conflict of open) {
+        expect(conflict.entityLabel).toBeTruthy();
+        expect(conflict.fields.length).toBeGreaterThan(0);
+        for (const field of conflict.fields) {
+          expect(field).toHaveProperty('localValue');
+          expect(field).toHaveProperty('remoteValue');
+        }
+      }
+      if (open.length > 0) {
+        const first = open[0]!;
+        await repo.resolveConflict(first.id, 'remote');
+        const after = await repo.listConflicts();
+        expect(after.some((conflict) => conflict.id === first.id)).toBe(false);
+        // Settled once; a second answer has nothing to settle.
+        await expect(repo.resolveConflict(first.id, 'local')).rejects.toMatchObject({
+          code: 'not_found',
+        });
+      }
+      await expect(repo.resolveConflict('no-such-conflict', 'local')).rejects.toMatchObject({
+        code: 'not_found',
+      });
+    });
+
     // -- smart categories (ADR-038) -------------------------------------------
 
     const scribeRule = {

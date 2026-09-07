@@ -301,6 +301,155 @@ fn write_children(
     Ok(())
 }
 
+/// The child collections in the shape the journal diffs them: the same
+/// defaults `write_children` applies, so an edit that changed nothing
+/// journals nothing. Order is insertion order, which is what the form shows.
+fn children_from_input(input: &ContactInput) -> serde_json::Map<String, serde_json::Value> {
+    let phones: Vec<_> = input
+        .phones
+        .iter()
+        .enumerate()
+        .filter(|(_, phone)| !phone.raw.trim().is_empty())
+        .map(|(index, phone)| {
+            json!({
+                "kind": phone.kind.clone().unwrap_or_else(|| "mobile".into()),
+                "raw": phone.raw.trim(),
+                "label": phone.label,
+                "isPrimary": phone.is_primary || index == 0,
+            })
+        })
+        .collect();
+    let emails: Vec<_> = input
+        .emails
+        .iter()
+        .enumerate()
+        .filter(|(_, email)| !email.address.trim().is_empty())
+        .map(|(index, email)| {
+            json!({
+                "kind": email.kind.clone().unwrap_or_else(|| "personal".into()),
+                "address": email.address.trim(),
+                "isPrimary": email.is_primary || index == 0,
+            })
+        })
+        .collect();
+    let aliases: Vec<_> = input
+        .aliases
+        .iter()
+        .filter(|alias| !alias.value.trim().is_empty())
+        .map(|alias| {
+            json!({
+                "kind": alias.kind.clone().unwrap_or_else(|| "alias".into()),
+                "value": alias.value.trim(),
+                "languageCode": alias.language_code,
+            })
+        })
+        .collect();
+    let specialties: Vec<_> = input
+        .specialties
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect();
+    let mut tag_ids = input.tag_ids.clone();
+    tag_ids.sort();
+    tag_ids.dedup();
+    let mut category_ids = input.category_ids.clone();
+    category_ids.sort();
+    category_ids.dedup();
+
+    let mut map = serde_json::Map::new();
+    map.insert("phones".into(), json!(phones));
+    map.insert("emails".into(), json!(emails));
+    map.insert("aliases".into(), json!(aliases));
+    map.insert("specialties".into(), json!(specialties));
+    map.insert("languages".into(), json!(input.languages));
+    map.insert("tagIds".into(), json!(tag_ids));
+    map.insert("categoryIds".into(), json!(category_ids));
+    map
+}
+
+/// The stored child collections in the same shape as `children_from_input`.
+fn children_snapshot(
+    connection: &Connection,
+    contact_id: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut phones = connection.prepare(
+        "SELECT kind, raw, label, is_primary FROM contact_phones
+          WHERE contact_id = ?1 AND deleted_at IS NULL ORDER BY rowid",
+    )?;
+    let phones: Vec<serde_json::Value> = phones
+        .query_map(params![contact_id], |row| {
+            Ok(json!({
+                "kind": row.get::<_, String>(0)?,
+                "raw": row.get::<_, String>(1)?,
+                "label": row.get::<_, Option<String>>(2)?,
+                "isPrimary": row.get::<_, i64>(3)? != 0,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut emails = connection.prepare(
+        "SELECT kind, address, is_primary FROM contact_emails
+          WHERE contact_id = ?1 AND deleted_at IS NULL ORDER BY rowid",
+    )?;
+    let emails: Vec<serde_json::Value> = emails
+        .query_map(params![contact_id], |row| {
+            Ok(json!({
+                "kind": row.get::<_, String>(0)?,
+                "address": row.get::<_, String>(1)?,
+                "isPrimary": row.get::<_, i64>(2)? != 0,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut aliases = connection.prepare(
+        "SELECT kind, value, language_code FROM contact_aliases
+          WHERE contact_id = ?1 AND deleted_at IS NULL ORDER BY rowid",
+    )?;
+    let aliases: Vec<serde_json::Value> = aliases
+        .query_map(params![contact_id], |row| {
+            Ok(json!({
+                "kind": row.get::<_, String>(0)?,
+                "value": row.get::<_, String>(1)?,
+                "languageCode": row.get::<_, Option<String>>(2)?,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let specialties = simple_column(
+        connection,
+        "SELECT value FROM contact_specialties WHERE contact_id = ?1 AND deleted_at IS NULL
+          ORDER BY rowid",
+        contact_id,
+    )?;
+    let languages = simple_column(
+        connection,
+        "SELECT language_code FROM contact_languages WHERE contact_id = ?1 AND deleted_at IS NULL
+          ORDER BY rowid",
+        contact_id,
+    )?;
+    let tag_ids = simple_column(
+        connection,
+        "SELECT tag_id FROM contact_tags WHERE contact_id = ?1 AND deleted_at IS NULL
+          ORDER BY tag_id",
+        contact_id,
+    )?;
+    let category_ids = simple_column(
+        connection,
+        "SELECT category_id FROM contact_categories
+          WHERE contact_id = ?1 AND deleted_at IS NULL AND mode = 'include'
+          ORDER BY category_id",
+        contact_id,
+    )?;
+
+    let mut map = serde_json::Map::new();
+    map.insert("phones".into(), json!(phones));
+    map.insert("emails".into(), json!(emails));
+    map.insert("aliases".into(), json!(aliases));
+    map.insert("specialties".into(), json!(specialties));
+    map.insert("languages".into(), json!(languages));
+    map.insert("tagIds".into(), json!(tag_ids));
+    map.insert("categoryIds".into(), json!(category_ids));
+    Ok(map)
+}
+
 /// Update a contact.
 ///
 /// When `base_version` is supplied and no longer current, the write is refused.
@@ -328,6 +477,7 @@ pub fn update_contact(
     let device = device_id(connection)?;
     let now = now_iso();
     let next_version = before.version + 1;
+    let children_before = children_snapshot(connection, id)?;
 
     let tx = connection.transaction()?;
     tx.execute(
@@ -399,6 +549,20 @@ pub fn update_contact(
         diff("reasonForSaving", json!(before.reason_for_saving), json!(input.reason_for_saving));
         diff("source", json!(before.source), json!(input.source));
         diff("introducedBy", json!(before.introduced_by), json!(input.introduced_by));
+        diff(
+            "introducedByContactId",
+            json!(before.introduced_by_contact_id),
+            json!(input.introduced_by_contact_id),
+        );
+        diff("isFavorite", json!(before.is_favorite), json!(input.is_favorite));
+        // The children are rewritten wholesale above; the journal still needs
+        // to know *which* collections moved, or a phone-only edit would be
+        // invisible to the card history and to sync (ADR-039).
+        let children_after = children_from_input(input);
+        for (key, after) in children_after {
+            let from = children_before.get(&key).cloned().unwrap_or(json!([]));
+            diff(&key, from, after);
+        }
     }
     let payload = serde_json::Value::Object(changed);
     let previous = serde_json::Value::Object(was);
@@ -487,14 +651,40 @@ pub fn restore_contact(connection: &mut Connection, id: &str) -> Result<ContactW
     get_contact(connection, id)?.ok_or_else(|| DbError::NotFound("איש הקשר".into()))
 }
 
-pub fn set_favorite(connection: &Connection, id: &str, is_favorite: bool) -> Result<()> {
-    let changed = connection.execute(
-        "UPDATE contacts SET is_favorite = ?2, updated_at = ?3, version = version + 1 WHERE id = ?1",
-        params![id, i64::from(is_favorite), now_iso()],
-    )?;
-    if changed == 0 {
+/// A favorite is a real, synced fact about the record (the star shows on
+/// every device), so it is journaled like any other field.
+pub fn set_favorite(connection: &mut Connection, id: &str, is_favorite: bool) -> Result<()> {
+    let before: Option<(i64, i64)> = connection
+        .query_row("SELECT version, is_favorite FROM contacts WHERE id = ?1", params![id], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .optional()?;
+    let Some((version, was)) = before else {
         return Err(DbError::NotFound("איש הקשר".into()));
+    };
+    if (was != 0) == is_favorite {
+        return Ok(());
     }
+    let device = device_id(connection)?;
+    let tx = connection.transaction()?;
+    tx.execute(
+        "UPDATE contacts SET is_favorite = ?2, updated_at = ?3, version = ?4, device_id = ?5
+          WHERE id = ?1",
+        params![id, i64::from(is_favorite), now_iso(), version + 1, device],
+    )?;
+    mutation::record(
+        &tx,
+        mutation::NewMutation {
+            entity_type: "contact",
+            entity_id: id,
+            operation: Operation::Update,
+            payload: Some(&json!({ "isFavorite": is_favorite })),
+            previous: Some(&json!({ "isFavorite": was != 0 })),
+            base_version: version,
+            device_id: &device,
+        },
+    )?;
+    tx.commit()?;
     Ok(())
 }
 

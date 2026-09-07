@@ -48,6 +48,17 @@ pub enum DbError {
     /// the settings screen surfaces the state. See ADR-036.
     #[error("שגיאת מנוע סמנטי: {0}")]
     Semantic(String),
+
+    /// The sync server could not be reached or answered with an error. The
+    /// local write already succeeded — this is only about delivery, and the
+    /// engine retries on the next cycle. See ADR-039.
+    #[error("הסנכרון נכשל: {0}")]
+    Sync(String),
+
+    /// The server does not recognize this device (its token was revoked or
+    /// the pairing code was wrong or expired). Pairing again is the remedy.
+    #[error("השרת אינו מכיר את המכשיר הזה — יש לצמד אותו מחדש")]
+    Unauthorized,
 }
 
 /// Wire form of an error, matching what `toRepositoryError` expects on the
@@ -71,6 +82,8 @@ impl DbError {
             | DbError::Locked
             | DbError::Semantic(_) => "unavailable",
             DbError::Sqlite(_) | DbError::Serde(_) => "database",
+            DbError::Sync(_) => "sync",
+            DbError::Unauthorized => "permission_denied",
         }
     }
 

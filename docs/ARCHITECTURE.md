@@ -16,8 +16,9 @@
 │  src-tauri (thin)                                            │
 │      ▼                                                       │
 │  crates/yanuka-db ──→ crates/yanuka-search                   │
-│      ▼                                                       │
-│  SQLite  (bundled, FTS5 + trigram, WAL)                      │
+│      ▼         └── sync engine ──HTTP──▶ server/yanuka-server│
+│  SQLite  (bundled, FTS5 + trigram, WAL)      (same crate,    │
+│                                               same schema)   │
 └─────────────────────────────────────────────────────────────┘
 
 packages/  types · validation · utils · search · database · core · ui · config
@@ -54,6 +55,7 @@ So it does not:
 |---|---|---|
 | `crates/yanuka-search` | no | yes |
 | `crates/yanuka-db` | no | yes |
+| `server/yanuka-server` | no | yes |
 | `apps/desktop/src-tauri` | yes | CI only |
 
 ```bash
@@ -112,22 +114,32 @@ a future web client and it is platform-independent, it belongs in a package.
 Platform-specific things — the SQLite driver, filesystem access, Windows APIs,
 Android intents — stay in the app.
 
+## The server
+
+`server/yanuka-server` (ADR-039) is the always-on peer: axum over the same
+`yanuka-db` crate, holding a copy of the archive in the same SQLite schema.
+It has no logic of its own — `yanuka_db::sync::hub` accepts revisions and
+serves the stream, `yanuka_db::sync::devices` pairs and authenticates — so
+the whole protocol is tested in the storage crate without a socket, and the
+server's test drives the real router through the desktop's own transport.
+Deployment shapes are in `server/README.md`.
+
 ## Where the deferred pieces attach
 
 None of these are built. The point of listing them is that none of them require
 changing what exists.
 
-- **Server + sync.** `crates/yanuka-db/src/mutation.rs` already logs every write
-  with a per-field payload. A sync engine drains that table; nothing above the
-  repository interface changes. See SYNC.md.
 - **Web client.** Next.js app consuming `@yanuka/core` with a
-  `HttpRepository`. Screens and ranking are reused as-is; only the repository
-  implementation is new.
+  `HttpRepository` against `yanuka-server`, whose copy of the archive is
+  already searchable. Screens and ranking are reused as-is; only the
+  repository implementation is new — and this is where permissions
+  (ADR-020) start being enforced.
 - **Android.** React Native cannot use `@yanuka/ui` (it is DOM-based), but
   `types`, `validation`, `utils`, `search` and `core` all apply unchanged.
-- **Postgres.** A second migrations directory under
-  `packages/database/migrations/postgres`. The dialect differences are contained
-  inside the repository implementation and never leak upward. See DATABASE.md.
+- **Postgres.** Not needed at this scale (ADR-039); if it ever is, a second
+  migrations directory under `packages/database/migrations/postgres`, with
+  the dialect differences contained inside the repository implementation.
+  See DATABASE.md.
 
 `apps/web`, `apps/mobile` and `server/` are deliberately *not* created as empty
 placeholders — empty packages slow the build, distort coverage and rot. Their
@@ -139,9 +151,11 @@ shape is documented here instead; ADR-017.
 |---|---|---|
 | unit + integration (TS) | `pnpm test` — 133 tests | anywhere |
 | migrations + FTS5 | `node:sqlite` in vitest | anywhere |
-| storage + search (Rust) | `cargo test -p yanuka-db -p yanuka-search` — 29 tests | anywhere |
+| storage + search (Rust) | `cargo test -p yanuka-db -p yanuka-search` — 54 tests | anywhere |
+| the sync protocol | two devices + a server in one process (`tests/sync.rs`) | anywhere |
+| the server over HTTP | `cargo test -p yanuka-server` — real socket, real transport | anywhere |
 | normalizer conformance | shared JSON fixture, both languages | anywhere |
 | IPC name parity | regex over `commands.rs` vs `IPC_COMMANDS` | anywhere |
-| the real UI | Playwright + Chromium — 11 tests | anywhere |
+| the real UI | Playwright + Chromium — 26 tests | anywhere |
 | the Tauri shell compiles | `cargo check -p yanuka-desktop` | CI (ubuntu + apt deps) |
 | the installer builds | `tauri build` | CI (windows-latest) |

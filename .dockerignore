@@ -1,0 +1,7 @@
+target
+node_modules
+**/node_modules
+**/dist
+apps/desktop/src-tauri/resources/semantic
+*.db
+backups

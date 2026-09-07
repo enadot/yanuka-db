@@ -656,3 +656,78 @@ microseconds; thousands of contacts × a dozen rules on a rebuild is well
 under a second). Renaming a category reindexes its members. `category`
 facets and `category` FTS hits now include rule members, which is the
 point. Nesting (`parent_id`) remains in the schema and unused.
+
+## ADR-039 — שרת וסנכרון: עמית שתמיד דלוק, ומיזוג לפי שדה במכשיר
+
+Delivers ADR-019. The journal, the cursors and the conflict table had been
+in place since 0.1; what was missing was a peer to talk to and the rules for
+taking its word in. The user asked to move to the next stage; sync is
+product priority 5 and the ground every later stage (permissions, web,
+Android) stands on.
+
+Decisions, and what each buys:
+
+- **The server is `yanuka-db` behind HTTP, on SQLite — not Postgres.**
+  `server/yanuka-server` is a few hundred lines of axum over the same crate
+  the desktop uses: one schema, one set of migrations, one search engine,
+  one sync protocol. A contacts archive of thousands of records and a
+  handful of devices needs none of what Postgres adds, and needs very much
+  what it removes: a single binary a person can run on a NAS, a Raspberry
+  Pi, a tiny VPS or the central machine itself, with a file to back up.
+  The server's copy is a real, searchable archive, which is what a thinner
+  web client will read later. `DATABASE.md`'s Postgres mapping stays as a
+  record of how the dialect would be contained if scale ever demanded it.
+- **The unit is a revision: whole state plus the changed fields.** SYNC.md
+  had said "changed fields only". Whole state is what a device that has
+  never seen a record needs — and what makes a first pairing a plain push
+  of everything. The changed set is what keeps merging per field. Both
+  ride together; the cost is bytes, which are cheap here.
+- **The server refuses; the device merges.** A push whose base is stale is
+  answered with the current version, never applied and never merged. The
+  device pulls, merges three-way by field against what it changed locally,
+  and pushes again. Merging where the person is means a conflict can be
+  shown and decided; merging on the server would have meant deciding for
+  them or storing a decision nobody made.
+- **Conflicts hold the record.** A colliding field writes a `conflicts`
+  row with both values and keeps the record out of the push until a person
+  chooses — local, remote or "I edited it". Fields that did not collide
+  merge meanwhile, so one disputed phone number never blocks a city
+  correction. Nothing is decided by clock.
+- **Remote changes are journaled.** They enter `mutations` as `synced`
+  rows under the other device's id, so the card history shows who changed
+  what on which machine, and the journal remains the one record of what
+  happened to a contact.
+- **The journal was made sufficient.** A contact edit now journals which
+  collections moved (phones, emails, aliases, specialties, languages, tags,
+  manual categories) — previously invisible to history too — and a
+  favourite toggle and a category reorder are journaled at all. Without
+  this a phone-only edit would have pushed with an empty changed set and
+  been dropped on arrival.
+- **Devices pair with a one-time code; tokens are hashed.** The server
+  prints a code at first start and any paired device can mint the next;
+  the desktop keeps its token in the encrypted database. Only SHA-256
+  digests live on the server (`devices.token_hash`, `pair_codes`). Revoking
+  a device is one command; disconnecting a device is one button, and
+  keeps everything local.
+- **No network in the engine.** `yanuka_db::sync` sees a `Transport` of
+  two calls and a `Database` it borrows briefly; the whole protocol — two
+  devices and a server — runs in one test process over three in-memory
+  databases. HTTP is one file behind a feature; the desktop's worker never
+  holds the database while it waits on a socket.
+
+Rejected: Postgres now (a second dialect, a second migrations directory and
+a service to operate, for nothing this archive needs); last-write-wins
+(clocks on offline machines are not comparable, and it deletes what a human
+typed); server-side merge (decides for the person or stores an undecided
+state); CRDTs (a contact is not a text document — per-field merge with human
+conflicts is the honest model at this scale); TLS terminated by the server
+(a reverse proxy or a private network does it better, and the README says
+which); an event stream over WebSocket (a five-minute poll plus a wake on
+local change is indistinguishable for two or three people sharing one
+archive).
+
+Cost: migration 0005 (bookkeeping tables only); `sha2`, `getrandom` and an
+optional `ureq` in the storage crate; `axum` and `tokio` in the server; a
+thread in the desktop. Users and permissions are still not enforced
+(ADR-020): the server authenticates *devices*; a person's role arrives with
+the web client.

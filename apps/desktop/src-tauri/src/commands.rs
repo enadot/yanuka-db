@@ -9,12 +9,14 @@
 //! `apps/desktop/src/lib/tauri-repository.ts`; `commands.test.ts` asserts that.
 
 use serde_json::Value;
-use tauri::State;
+use tauri::{Manager, State};
 use yanuka_db::categories::{self, CategoryRule};
 use yanuka_db::models::*;
+use yanuka_db::sync::{self as sync_engine, config as sync_config, conflicts, devices};
 use yanuka_db::{mutation, repository, search, taxonomy, DbError};
 
 use crate::state::AppState;
+use crate::sync;
 
 type Answer<T> = Result<T, DbError>;
 
@@ -645,4 +647,122 @@ pub fn ocr_save_note(
 #[tauri::command]
 pub fn ocr_delete_page(state: State<'_, AppState>, id: String) -> Answer<()> {
     state.with(|connection| yanuka_db::ocr::delete_page(connection, &id))
+}
+
+// -- sync (ADR-039) ------------------------------------------------------------
+//
+// The three commands that reach the network run on a blocking thread, not on
+// the main one: a pairing or a cycle can wait the whole of a socket timeout,
+// and the window must stay responsive meanwhile.
+
+fn overview(state: &AppState) -> Answer<Value> {
+    let (online, syncing) = state.sync_flags();
+    state.with(|connection| sync_engine::engine::status_json(connection, online, syncing))
+}
+
+async fn off_thread(
+    app: tauri::AppHandle,
+    work: impl FnOnce(&AppState) -> Answer<Value> + Send + 'static,
+) -> Answer<Value> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        work(&state)
+    })
+    .await
+    .map_err(|error| DbError::Sync(format!("worker: {error}")))?
+}
+
+/// The whole picture for the settings screen and the indicator.
+#[tauri::command]
+pub fn sync_overview(state: State<'_, AppState>) -> Answer<Value> {
+    overview(&state)
+}
+
+/// Pair this machine with a server and run the first cycle right away, so
+/// the answer already says whether the archive went up.
+#[tauri::command]
+pub async fn connect_sync(
+    app: tauri::AppHandle,
+    server_url: String,
+    code: String,
+    device_name: Option<String>,
+) -> Answer<Value> {
+    let app_version = app.package_info().version.to_string();
+    off_thread(app, move |state| {
+        let device = devices::DeviceInfo {
+            id: state.with(|connection| repository::device_id(connection))?,
+            name: device_name
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(sync::default_device_name),
+            kind: "desktop".into(),
+            platform: Some(std::env::consts::OS.into()),
+            app_version: Some(app_version),
+        };
+        // Network first, outside any database lock.
+        let paired = sync_engine::http::pair(&server_url, &code, &device)?;
+        let config = sync_config::SyncConfig {
+            server_url: sync_engine::http::normalize_url(&server_url)?,
+            token: paired.token,
+            server_name: paired.server_name,
+            device_name: Some(device.name),
+        };
+        state.with(|connection| sync_config::save_config(connection, &config))?;
+        // The first cycle's outcome lands in lastSyncAt / lastError either way.
+        if let Err(error) = sync::run_cycle_now(state, &config) {
+            eprintln!("first sync after pairing: {error}");
+        }
+        overview(state)
+    })
+    .await
+}
+
+/// Forget the server. Records and history stay.
+#[tauri::command]
+pub fn disconnect_sync(state: State<'_, AppState>) -> Answer<Value> {
+    state.with(|connection| sync_config::clear_config(connection))?;
+    state.set_online(false);
+    overview(&state)
+}
+
+/// A cycle now, on request. Failures are reported through the overview
+/// rather than as an error: the person asked for the state of things.
+#[tauri::command]
+pub async fn sync_now(app: tauri::AppHandle) -> Answer<Value> {
+    off_thread(app, |state| {
+        let config = state.with(|connection| sync_config::load_config(connection))?;
+        if let Some(config) = config {
+            if let Err(error) = sync::run_cycle_now(state, &config) {
+                eprintln!("sync now: {error}");
+            }
+        }
+        overview(state)
+    })
+    .await
+}
+
+/// A one-time code for pairing another device with the same server.
+#[tauri::command]
+pub async fn create_pair_code(app: tauri::AppHandle) -> Answer<Value> {
+    off_thread(app, |state| {
+        let config = state
+            .with(|connection| sync_config::load_config(connection))?
+            .ok_or_else(|| DbError::Validation("המכשיר הזה אינו מחובר לשרת".into()))?;
+        let (code, expires_at) = sync_engine::http::pair_code(&config.server_url, &config.token)?;
+        Ok(serde_json::json!({ "code": code, "expiresAt": expires_at }))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn list_conflicts(state: State<'_, AppState>) -> Answer<Vec<Value>> {
+    state.with(|connection| conflicts::list(connection))
+}
+
+#[tauri::command]
+pub fn resolve_conflict(state: State<'_, AppState>, id: String, resolution: String) -> Answer<()> {
+    state.with(|connection| conflicts::resolve(connection, &id, &resolution))?;
+    // The decision travels on the next cycle; ask for it now.
+    state.kick_sync();
+    Ok(())
 }

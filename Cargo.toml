@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/yanuka-db", "crates/yanuka-search", "apps/desktop/src-tauri"]
+members = [
+    "crates/yanuka-db",
+    "crates/yanuka-search",
+    "apps/desktop/src-tauri",
+    "server/yanuka-server",
+]
 
 # The Tauri shell links against the system webview, which is not present on
 # every development machine (and notably not on the Linux CI runner used for
@@ -9,11 +14,14 @@ members = ["crates/yanuka-db", "crates/yanuka-search", "apps/desktop/src-tauri"]
 #
 #     cargo test -p yanuka-db -p yanuka-search
 #
+# `yanuka-server` (server/) is plain Rust over the same crate and builds
+# anywhere too: `cargo build --release -p yanuka-server`.
+#
 # Building the whole workspace requires libwebkit2gtk-4.1-dev on Linux, or
 # Windows/macOS. See docs/ARCHITECTURE.md.
 
 [workspace.package]
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
 rust-version = "1.77"
 license = "UNLICENSED"

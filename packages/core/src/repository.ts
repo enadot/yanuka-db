@@ -8,14 +8,18 @@ import type {
   CategoryRule,
   CategorySuggestion,
   CategorySummary,
+  ConflictResolution,
+  ConflictView,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
   Note,
   Organization,
+  PairCode,
   Relationship,
   SearchResponse,
   SearchSuggestion,
+  SyncOverview,
   SyncState,
   Tag,
   Ulid,
@@ -46,6 +50,14 @@ export interface CategoryMembersOptions {
   query?: string;
   limit?: number;
   offset?: number;
+}
+
+/** What pairing with a server needs: where it is, and the one-time code. */
+export interface ConnectSyncInput {
+  serverUrl: string;
+  code: string;
+  /** How this machine appears in the server's device list. */
+  deviceName?: string;
 }
 
 export interface Page<T> {
@@ -204,6 +216,23 @@ export interface ContactsRepository {
   deleteNote(id: Ulid): Promise<void>;
 
   // -- meta ----------------------------------------------------------------
+
+  // -- sync (ADR-039) ---------------------------------------------------------
+
+  /** The pairing and its state; `configured: false` on a machine with no server. */
+  syncOverview(): Promise<SyncOverview>;
+  /** Pair with a server and run the first cycle; the answer already says how it went. */
+  connectSync(input: ConnectSyncInput): Promise<SyncOverview>;
+  /** Forget the server. Records and history stay. */
+  disconnectSync(): Promise<SyncOverview>;
+  /** A cycle now. Failures land in `lastError`, not in a thrown error. */
+  syncNow(): Promise<SyncOverview>;
+  /** A one-time code for pairing another device with the same server. */
+  createPairCode(): Promise<PairCode>;
+  /** Fields two devices changed differently, waiting for a person. */
+  listConflicts(): Promise<ConflictView[]>;
+  /** `local` keeps this device's values, `remote` takes the other's, `manual` after editing. */
+  resolveConflict(id: Ulid, resolution: ConflictResolution): Promise<void>;
 
   stats(): Promise<DatabaseStats>;
 

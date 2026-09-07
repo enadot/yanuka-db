@@ -1027,9 +1027,27 @@ pub fn reorder_categories(connection: &mut Connection, ids: &[String]) -> Result
     };
     let tx = connection.transaction()?;
     for (index, id) in ids.iter().chain(rest.iter()).enumerate() {
+        let current: Option<i64> = tx
+            .query_row("SELECT sort_order FROM categories WHERE id = ?1", params![id], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        if current == Some(index as i64) {
+            continue;
+        }
         tx.execute(
-            "UPDATE categories SET sort_order = ?2 WHERE id = ?1",
-            params![id, index as i64],
+            "UPDATE categories SET sort_order = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, index as i64, now_iso()],
+        )?;
+        // The order is part of the shelf and must reach other devices.
+        journal(
+            &tx,
+            "category",
+            id,
+            Operation::Update,
+            Some(&json!({ "sortOrder": index as i64 })),
+            Some(&json!({ "sortOrder": current })),
+            0,
         )?;
     }
     tx.commit()?;

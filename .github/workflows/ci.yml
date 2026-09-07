@@ -57,7 +57,10 @@ jobs:
       - run: cargo clippy -p yanuka-db -p yanuka-search --all-targets -- -D warnings
       - run: cargo clippy -p yanuka-db --features semantic --all-targets -- -D warnings
       - run: cargo clippy -p yanuka-db --features ocr --all-targets -- -D warnings
+      # The sync server and the HTTP transport it is tested through (ADR-039).
+      - run: cargo clippy -p yanuka-server -p yanuka-db --features http --all-targets -- -D warnings
       - run: cargo test -p yanuka-db -p yanuka-search
+      - run: cargo test -p yanuka-server
       # The storage suite again, under the SQLCipher build the desktop ships
       # with — this is also the only place the encryption tests run (ADR-033).
       - run: cargo test -p yanuka-db --features sqlcipher

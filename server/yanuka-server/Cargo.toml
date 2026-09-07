@@ -1,0 +1,35 @@
+[package]
+name = "yanuka-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The always-on peer: a small HTTP server that holds the archive and streams changes between devices"
+
+[lib]
+name = "yanuka_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "yanuka-server"
+path = "src/main.rs"
+
+[dependencies]
+# The same storage crate the desktop uses: one schema, one search engine,
+# one sync protocol. The server is a database that happens to be reachable.
+yanuka-db = { path = "../../crates/yanuka-db" }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# The end-to-end test drives the router through the desktop's own transport.
+yanuka-db = { path = "../../crates/yanuka-db", features = ["http"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+
+[features]
+default = []
+# Encryption at rest for the server's copy, keyed by YANUKA_DB_KEY. Off by
+# default because the vendored OpenSSL build is slow; see server/README.md.
+sqlcipher = ["yanuka-db/sqlcipher"]

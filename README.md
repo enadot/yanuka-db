@@ -44,8 +44,9 @@ installer attached.
 
 ```
 apps/desktop        React + shadcn/ui frontend, and the Tauri shell
-crates/yanuka-db    rusqlite storage, migrations, FTS5 search    (no Tauri dep)
+crates/yanuka-db    rusqlite storage, migrations, FTS5 search, sync engine (no Tauri dep)
 crates/yanuka-search Hebrew normalization and ranking            (no Tauri dep)
+server/yanuka-server the sync server: axum over yanuka-db        (no Tauri dep)
 packages/           types · validation · utils · search · database · core · ui
 docs/               architecture, database, search, sync, security, decisions
 ```
@@ -175,9 +176,14 @@ relationships written in place, add/edit, CSV import, duplicate detection and
 merge, automatic backups and CSV export, and encryption at rest (SQLCipher,
 with a recovery key instead of a passphrase — ADR-033).
 
+Local semantic search shipped in 0.7.0 (ADR-036); notebook import with a
+self-learning handwriting memory shipped in 0.8.0 (ADR-037); smart,
+rule-driven categories with home-screen navigation shipped in 0.9.0
+(ADR-038) — all entirely on the machine. Sync between devices through a
+small self-hosted server shipped in 0.10.0 (ADR-039): field-by-field
+merging, conflicts decided by a person, and nothing waiting on the network.
+See [`server/README.md`](server/README.md) to run the server.
+
 Designed and deliberately deferred, each with its cost recorded in
-[`docs/DECISIONS.md`](docs/DECISIONS.md): the sync transport, permission
-enforcement, and the web and Android clients. Local semantic search shipped
-in 0.7.0 (ADR-036); notebook import with a self-learning handwriting memory
-shipped in 0.8.0 (ADR-037); smart, rule-driven categories with home-screen
-navigation shipped in 0.9.0 (ADR-038) — all entirely on the machine.
+[`docs/DECISIONS.md`](docs/DECISIONS.md): permission enforcement and the
+web and Android clients — all three now stand on the server that exists.

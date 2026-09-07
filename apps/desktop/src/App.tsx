@@ -13,6 +13,7 @@ import { NotebooksScreen } from './screens/notebooks-screen';
 import { NotebookPageScreen } from './screens/notebook-page-screen';
 import { DuplicatesScreen } from './screens/duplicates-screen';
 import { TrashScreen } from './screens/trash-screen';
+import { ConflictsScreen } from './screens/conflicts-screen';
 import { UnlockScreen } from './screens/unlock-screen';
 import { securityStatus } from './lib/desktop-io';
 
@@ -46,6 +47,7 @@ export function App() {
         <Route path="notebooks/:id" element={<NotebookPageScreen />} />
         <Route path="duplicates" element={<DuplicatesScreen />} />
         <Route path="trash" element={<TrashScreen />} />
+        <Route path="conflicts" element={<ConflictsScreen />} />
       </Route>
     </Routes>
   );

@@ -97,6 +97,39 @@ export interface Conflict extends Pick<SyncableEntity, 'id'> {
   resolution: 'local' | 'remote' | 'manual' | null;
 }
 
+export const CONFLICT_RESOLUTIONS = ['local', 'remote', 'manual'] as const;
+export type ConflictResolution = (typeof CONFLICT_RESOLUTIONS)[number];
+
+/** An open conflict as the conflicts screen lists it: with the record's name. */
+export interface ConflictView extends Conflict {
+  /** Display name, note wording or tag name — whatever names the record. */
+  entityLabel: string | null;
+  /** The other device, when the server knew its name. */
+  remoteDeviceName: string | null;
+}
+
+/**
+ * What the settings screen and the indicator show about the pairing.
+ * `configured: false` is the normal state of a machine that has never been
+ * paired — nothing is wrong, there is simply no server. (`SyncStatus` above
+ * is the per-mutation state; this is the whole picture.)
+ */
+export interface SyncOverview extends SyncState {
+  configured: boolean;
+  serverUrl: string | null;
+  serverName: string | null;
+  deviceId: string;
+  deviceName: string | null;
+  /** The last cycle's failure, in the user's language; null after a good one. */
+  lastError: string | null;
+}
+
+/** A one-time code minted for pairing another device. */
+export interface PairCode {
+  code: string;
+  expiresAt: IsoDateTime;
+}
+
 /** Snapshot the desktop shows in its offline indicator. */
 export interface SyncState {
   online: boolean;

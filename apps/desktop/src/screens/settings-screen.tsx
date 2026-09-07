@@ -1,5 +1,4 @@
 import {
-  Database,
   DatabaseBackup,
   FileUp,
   HardDrive,
@@ -28,6 +27,7 @@ import {
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CategoryPill } from '../components/categories/category-icon';
+import { SyncCard } from '../components/sync/sync-card';
 import { useCategories, useDatabaseStats, useTags } from '../hooks/use-contacts';
 import {
   backupNow,
@@ -47,9 +47,8 @@ import { useIsLocalDatabase } from '../lib/repository';
  * Settings and database status.
  *
  * Reports what is actually true about this installation rather than offering
- * options that do not exist yet. The sync and permissions sections will appear
- * here when the server lands; until then, saying so plainly is better than a
- * disabled toggle.
+ * options that do not exist yet. Permissions will appear here when the web
+ * client lands; until then, saying so plainly is better than a disabled toggle.
  */
 export function SettingsScreen() {
   const { data: stats } = useDatabaseStats();
@@ -153,37 +152,7 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Database className="size-4" aria-hidden />
-            סנכרון
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">סנכרון אחרון</span>
-            <span>
-              {stats?.sync.lastSyncAt ? formatDateTime(stats.sync.lastSyncAt) : 'אין עדיין שרת'}
-            </span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">שינויים ממתינים</span>
-            <span className="numeric">{stats?.sync.pendingMutations ?? 0}</span>
-          </div>
-          <Separator />
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">התנגשויות פתוחות</span>
-            <span className="numeric">{stats?.sync.openConflicts ?? 0}</span>
-          </div>
-          <p className="pt-2 text-xs text-muted-foreground">
-            שרת סנכרון עדיין לא הוקם — זו החלטה מכוונת בשלב הזה, לא תקלה ולא עניין של חיבור
-            לאינטרנט. כל שינוי נרשם ביומן מקומי, וכשיוקם שרת, כל מה שהצטבר יסונכרן אליו. המערכת
-            עובדת במלואה, עם או בלי אינטרנט.
-          </p>
-        </CardContent>
-      </Card>
+      <SyncCard />
 
       <Card>
         <CardHeader>

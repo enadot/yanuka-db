@@ -9,6 +9,7 @@ mod backup;
 mod commands;
 mod keys;
 mod state;
+mod sync;
 
 use state::AppState;
 use tauri::Manager;
@@ -51,6 +52,11 @@ pub fn run() {
                 Ok(())
             });
             app.manage(state);
+
+            // Sync (ADR-039): a worker that sends what the journal holds and
+            // takes in what other devices sent, whenever a server is paired.
+            let kick = sync::spawn(app.handle().clone());
+            app.state::<AppState>().set_sync_kick(kick);
 
             // Semantic search (ADR-036). The model ships as a bundled
             // resource; when it is absent — a dev run without the fetch
@@ -118,6 +124,13 @@ pub fn run() {
             commands::restore_contact,
             commands::list_deleted_contacts,
             commands::set_favorite,
+            commands::sync_overview,
+            commands::connect_sync,
+            commands::disconnect_sync,
+            commands::sync_now,
+            commands::create_pair_code,
+            commands::list_conflicts,
+            commands::resolve_conflict,
             commands::touch_contact,
             commands::find_duplicates,
             commands::list_duplicate_pairs,

@@ -29,8 +29,11 @@ with administrator access to a running machine.
 `*.db`, `*.sqlite` and `backups/`, so a real contact database can never be
 committed by accident.
 
-**No contact data leaves the machine.** There is no network code. Fonts are the
-system stack rather than a CDN, partly for offline correctness and partly
+**Contact data leaves the machine only to a server the user runs.** The one
+network path is the sync transport (ADR-039), to a `yanuka-server` the user
+pairs with by a one-time code; nothing is sent anywhere until that pairing
+exists, and never to a third-party service or an AI API. Fonts are the
+bundled stack rather than a CDN, partly for offline correctness and partly
 because a font request leaks that the application is running.
 
 **A locked-down webview.** The Tauri CSP is `default-src 'self'` with no
@@ -121,8 +124,17 @@ from the start.
 
 ## In transit
 
-When the server exists: TLS only, certificate validation never disabled, tokens
-in the OS credential store rather than a file.
+The desktop talks to the sync server with a bearer token minted at pairing.
+Certificate validation is never disabled. The server itself speaks plain
+HTTP and is meant to sit behind one of three things, in order of preference:
+a private network (the same LAN, or a mesh VPN such as Tailscale), a reverse
+proxy that terminates TLS (Caddy does it with one line), or nothing — only
+when the server is on the same machine. `server/README.md` spells each out.
+
+The token lives in the desktop's database, which is encrypted at rest
+(ADR-033), rather than in a separate file; a restored backup carries its
+pairing with it. On the server only SHA-256 digests of tokens and pairing
+codes are stored, so a copied server database grants nothing.
 
 ## Rules
 
@@ -148,6 +160,7 @@ Stated plainly rather than left implicit:
 | gap | consequence | tracked |
 |---|---|---|
 | Database not encrypted | a stolen laptop exposes everything | ADR-018 |
-| Permissions not enforced | irrelevant while single-user; blocking for multi-user | ADR-020 |
+| Permissions not enforced | the server authenticates devices, not people; blocking for a web client | ADR-020 |
+| Server speaks plain HTTP | must sit on a private network or behind a TLS proxy | ADR-039 |
 | Installer unsigned | SmartScreen warns on first run | ADR-021 |
 | Audit log not surfaced | written but not readable in the UI | ADR-020 |

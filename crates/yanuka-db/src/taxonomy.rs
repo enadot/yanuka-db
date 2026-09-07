@@ -375,12 +375,16 @@ pub fn update_note(
           WHERE id = ?1",
         params![id, body.trim(), is_sensitive.map(i64::from), now_iso()],
     )?;
+    let mut payload = json!({ "contactId": contact_id, "body": body.trim() });
+    if let Some(sensitive) = is_sensitive {
+        payload["isSensitive"] = json!(sensitive);
+    }
     journal(
         &tx,
         "note",
         id,
         Operation::Update,
-        Some(&json!({ "contactId": contact_id, "body": body.trim() })),
+        Some(&payload),
         Some(&json!({ "body": old_body })),
         version,
     )?;

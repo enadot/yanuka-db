@@ -24,6 +24,12 @@ rusqlite = { version = "0.37", features = ["bundled", "functions", "backup", "se
 ulid = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 
+# Sync (ADR-039): device tokens and pairing codes are minted from OS entropy
+# and stored only as SHA-256 digests. Both crates are already in the
+# dependency graph of the desktop build, so they cost nothing new.
+sha2 = "0.10"
+getrandom = "0.3"
+
 # Semantic search (ADR-036): ONNX Runtime executes the bundled sentence
 # embedding model; `tokenizers` is Hugging Face's pure-Rust tokenizer. Both
 # sit behind the `semantic` feature so the default `cargo test` stays light —
@@ -36,6 +42,11 @@ tokenizers = { version = "0.23", optional = true, default-features = false, feat
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
 base64 = { version = "0.22", optional = true }
 
+# The device side of the sync transport (ADR-039). Blocking on purpose:
+# it runs on a worker thread that never holds the database while waiting.
+# Already in the desktop's dependency graph through `ort`.
+ureq = { version = "3", optional = true, default-features = false, features = ["rustls", "json"] }
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -45,3 +56,4 @@ default = []
 sqlcipher = ["rusqlite/bundled-sqlcipher-vendored-openssl"]
 semantic = ["dep:ort", "dep:tokenizers"]
 ocr = ["dep:image", "dep:base64"]
+http = ["dep:ureq"]

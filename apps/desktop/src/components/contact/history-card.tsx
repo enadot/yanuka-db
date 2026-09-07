@@ -3,7 +3,8 @@ import { History } from 'lucide-react';
 import type { AuditLogEntry } from '@yanuka/types';
 import { formatDateTime } from '@yanuka/utils';
 import { Button, Card, CardContent, CardHeader, CardTitle, Separator } from '@yanuka/ui';
-import { useContactHistory } from '../../hooks/use-contacts';
+import { useCategories, useContactHistory, useTags } from '../../hooks/use-contacts';
+import { FIELD_LABELS, valueText } from '../../lib/field-text';
 
 /**
  * What happened to this record, straight from the mutation journal.
@@ -13,27 +14,6 @@ import { useContactHistory } from '../../hooks/use-contacts';
  * any server exists). An accidental edit that overwrote a note written years
  * ago is recoverable by reading, not by guessing.
  */
-
-/** The same wording the edit form uses, so history reads like the form. */
-const FIELD_LABELS: Record<string, string> = {
-  displayName: 'שם מלא',
-  firstName: 'שם פרטי',
-  lastName: 'שם משפחה',
-  prefix: 'תואר',
-  title: 'תפקיד',
-  country: 'מדינה',
-  region: 'אזור',
-  city: 'עיר',
-  address: 'כתובת',
-  postalCode: 'מיקוד',
-  profession: 'מקצוע',
-  role: 'תפקיד',
-  notes: 'הערה חופשית',
-  reasonForSaving: 'נשמר בגלל',
-  source: 'מקור',
-  introducedBy: 'מי הכיר',
-  body: 'הערה',
-};
 
 const ACTION_LABELS: Record<AuditLogEntry['action'], string> = {
   create: 'הרשומה נוצרה',
@@ -66,17 +46,17 @@ function verbFor(entry: AuditLogEntry): string {
   );
 }
 
-function asText(value: unknown): string {
-  if (value === null || value === undefined || value === '') return 'ריק';
-  const text = String(value);
-  return [...text].length > 80 ? `${[...text].slice(0, 80).join('').trimEnd()}…` : text;
-}
-
 const INITIAL_COUNT = 5;
 
 export function HistoryCard({ contactId }: { contactId: string }) {
   const { data: entries = [] } = useContactHistory(contactId);
+  const { data: tags = [] } = useTags();
+  const { data: categories = [] } = useCategories();
   const [expanded, setExpanded] = useState(false);
+  // Tag and category edits are journaled by id; the reader wants names.
+  const lookup = (id: string) =>
+    tags.find((tag) => tag.id === id)?.name ?? categories.find((c) => c.id === id)?.name;
+  const asText = (value: unknown) => valueText(value, { maxLength: 80, lookup });
 
   if (entries.length === 0) return null;
 

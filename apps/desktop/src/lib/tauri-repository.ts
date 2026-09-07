@@ -1,5 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
-import { toRepositoryError, type CategoryMembersOptions, type ContactsRepository, type DatabaseStats, type DuplicateCandidate, type DuplicatePair, type ListContactsInput, type Page, type SearchInput } from '@yanuka/core';
+import {
+  toRepositoryError,
+  type CategoryMembersOptions,
+  type ConnectSyncInput,
+  type ContactsRepository,
+  type DatabaseStats,
+  type DuplicateCandidate,
+  type DuplicatePair,
+  type ListContactsInput,
+  type Page,
+  type SearchInput,
+} from '@yanuka/core';
 import type {
   AuditLogEntry,
   Category,
@@ -9,14 +20,18 @@ import type {
   CategoryRule,
   CategorySuggestion,
   CategorySummary,
+  ConflictResolution,
+  ConflictView,
   ContactSummary,
   ContactWithRelations,
   DeletedContactSummary,
   Note,
   Organization,
+  PairCode,
   Relationship,
   SearchResponse,
   SearchSuggestion,
+  SyncOverview,
   Tag,
   Ulid,
 } from '@yanuka/types';
@@ -233,6 +248,40 @@ export class TauriRepository implements ContactsRepository {
     return this.call('database_stats');
   }
 
+  // -- sync (ADR-039) ---------------------------------------------------------
+
+  syncOverview(): Promise<SyncOverview> {
+    return this.call('sync_overview');
+  }
+
+  connectSync(input: ConnectSyncInput): Promise<SyncOverview> {
+    return this.call('connect_sync', {
+      serverUrl: input.serverUrl,
+      code: input.code,
+      deviceName: input.deviceName ?? null,
+    });
+  }
+
+  disconnectSync(): Promise<SyncOverview> {
+    return this.call('disconnect_sync');
+  }
+
+  syncNow(): Promise<SyncOverview> {
+    return this.call('sync_now');
+  }
+
+  createPairCode(): Promise<PairCode> {
+    return this.call('create_pair_code');
+  }
+
+  listConflicts(): Promise<ConflictView[]> {
+    return this.call('list_conflicts');
+  }
+
+  resolveConflict(id: Ulid, resolution: ConflictResolution): Promise<void> {
+    return this.call('resolve_conflict', { id, resolution });
+  }
+
   auditLog(entityId?: Ulid, limit = 50): Promise<AuditLogEntry[]> {
     return this.call('audit_log', { entityId, limit });
   }
@@ -301,4 +350,11 @@ export const IPC_COMMANDS = [
   'ocr_delete_page',
   'save_exported_csv',
   'audit_log',
+  'sync_overview',
+  'connect_sync',
+  'disconnect_sync',
+  'sync_now',
+  'create_pair_code',
+  'list_conflicts',
+  'resolve_conflict',
 ] as const;

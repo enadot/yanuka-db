@@ -1,6 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CategoryInput, ContactInput, ListContactsInput, SearchInput } from '@yanuka/core';
-import type { CategoryMembershipMode, CategoryRule, RelationshipType, Ulid } from '@yanuka/types';
+import type {
+  CategoryInput,
+  ConnectSyncInput,
+  ContactInput,
+  ListContactsInput,
+  SearchInput,
+} from '@yanuka/core';
+import type {
+  CategoryMembershipMode,
+  CategoryRule,
+  ConflictResolution,
+  RelationshipType,
+  Ulid,
+} from '@yanuka/types';
 import { NoteInputSchema, RelationshipInputSchema } from '@yanuka/validation';
 import { useRepository } from '../lib/repository';
 
@@ -23,6 +35,8 @@ export const queryKeys = {
   stats: () => ['stats'] as const,
   trash: () => ['contacts', 'trash'] as const,
   history: (id: Ulid) => ['contacts', 'history', id] as const,
+  sync: () => ['sync'] as const,
+  conflicts: () => ['sync', 'conflicts'] as const,
 };
 
 export function useSearch(input: SearchInput, enabled = true) {
@@ -390,6 +404,69 @@ export function useSetFavorite() {
   return useMutation({
     mutationFn: ({ id, isFavorite }: { id: Ulid; isFavorite: boolean }) =>
       repository.setFavorite(id, isFavorite),
+    onSuccess: invalidate,
+  });
+}
+
+// -- sync (ADR-039) -----------------------------------------------------------
+
+/** Polled: the worker syncs in the background and the indicator must follow. */
+export function useSyncOverview() {
+  const repository = useRepository();
+  return useQuery({
+    queryKey: queryKeys.sync(),
+    queryFn: () => repository.syncOverview(),
+    refetchInterval: 15_000,
+  });
+}
+
+/** A cycle may have brought records in: everything a remote write can touch. */
+function useInvalidateAfterSync() {
+  const queryClient = useQueryClient();
+  return () => {
+    for (const key of ['sync', 'stats', 'contacts', 'search', 'tags', 'categories', 'organizations']) {
+      void queryClient.invalidateQueries({ queryKey: [key] });
+    }
+  };
+}
+
+export function useConnectSync() {
+  const repository = useRepository();
+  const invalidate = useInvalidateAfterSync();
+  return useMutation({
+    mutationFn: (input: ConnectSyncInput) => repository.connectSync(input),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDisconnectSync() {
+  const repository = useRepository();
+  const invalidate = useInvalidateAfterSync();
+  return useMutation({ mutationFn: () => repository.disconnectSync(), onSuccess: invalidate });
+}
+
+export function useSyncNow() {
+  const repository = useRepository();
+  const invalidate = useInvalidateAfterSync();
+  return useMutation({ mutationFn: () => repository.syncNow(), onSuccess: invalidate });
+}
+
+export function useCreatePairCode() {
+  const repository = useRepository();
+  return useMutation({ mutationFn: () => repository.createPairCode() });
+}
+
+export function useConflicts() {
+  const repository = useRepository();
+  return useQuery({ queryKey: queryKeys.conflicts(), queryFn: () => repository.listConflicts() });
+}
+
+export function useResolveConflict() {
+  const repository = useRepository();
+  const invalidate = useInvalidateAfterSync();
+  return useMutation({
+    mutationFn: ({ id, resolution }: { id: Ulid; resolution: ConflictResolution }) =>
+      repository.resolveConflict(id, resolution),
     onSuccess: invalidate,
   });
 }

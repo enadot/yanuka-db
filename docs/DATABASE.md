@@ -48,6 +48,7 @@ Tested by `packages/database/src/migrations.test.ts` (Node's `node:sqlite`) and
    └───────┘
 
    sync:   mutations · sync_cursors · conflicts · devices
+           sync_revisions · sync_log · pair_codes          (0005, ADR-039)
    admin:  users · audit_log · saved_searches · app_meta
    search: contact_fts (FTS5) · contact_trigram (FTS5 trigram)
 ```
@@ -165,10 +166,27 @@ PRAGMA temp_store   = MEMORY;   -- set now: SQLCipher would spill plaintext temp
 `foreign_keys` is the one that bites. It is per-connection, off by default, and
 forgetting it silently disables every foreign key in the schema.
 
-## Postgres, when the server arrives
+## The server: the same SQLite
 
-A second directory, `migrations/postgres`, authored against the same manifest.
-The mapping is mechanical:
+The sync server (ADR-039) runs this very schema. Migration 0005 adds what
+syncing needs on both ends, all of it bookkeeping about records rather than
+records:
+
+| table | on a device | on the server |
+|---|---|---|
+| `sync_revisions` | the server version last agreed per record; no row = never sent | the current version per record |
+| `sync_log` | empty | the ordered stream devices pull by `seq` |
+| `pair_codes` | empty | one-time pairing codes, as SHA-256 |
+| `devices.token_hash` | — | the device's bearer token, as SHA-256 |
+
+Dropping all four loses nothing but the ability to sync; a fresh pairing
+rebuilds them. The server installs no default categories and never writes a
+record of its own.
+
+## Postgres, if scale ever demands it
+
+Not planned (ADR-039). If it were, a second directory, `migrations/postgres`,
+authored against the same manifest. The mapping is mechanical:
 
 | SQLite | Postgres |
 |---|---|

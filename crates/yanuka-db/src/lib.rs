@@ -25,6 +25,7 @@ pub mod repository;
 pub mod search;
 #[cfg(feature = "semantic")]
 pub mod semantic;
+pub mod sync;
 pub mod taxonomy;
 
 pub use connection::{open, open_in_memory, sqlite_version};
