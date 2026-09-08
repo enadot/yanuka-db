@@ -14,10 +14,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# `sqlcipher` swaps rusqlite's bundled SQLite for bundled SQLCipher with a
-# vendored OpenSSL — encryption at rest, ADR-033. The shipped desktop always
-# builds with it; the cost is compile time, not a runtime dependency.
-yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher", "semantic", "ocr", "http"] }
 yanuka-search = { path = "../../../crates/yanuka-search" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
@@ -33,6 +29,20 @@ keyring = { version = "3", features = ["windows-native"] }
 getrandom = "0.3"
 # Notebook scans cross the IPC boundary as base64 strings.
 base64 = "0.22"
+
+# `sqlcipher` swaps rusqlite's bundled SQLite for bundled SQLCipher with a
+# vendored OpenSSL — encryption at rest, ADR-033. The shipped desktop always
+# builds with it; the cost is compile time, not a runtime dependency.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+yanuka-db = { path = "../../../crates/yanuka-db", features = ["sqlcipher", "semantic", "ocr", "http"] }
+
+# Android (ADR-040) ships without the embedding model (the runtime has no
+# prebuilt Android binaries and the model would triple the APK) and without
+# SQLCipher (Android's own file-based encryption covers app storage once the
+# phone has a lock screen). Everything else — the database, the Hebrew
+# search, notebook import, sync — is the same code.
+[target.'cfg(target_os = "android")'.dependencies]
+yanuka-db = { path = "../../../crates/yanuka-db", features = ["ocr", "http"] }
 
 [features]
 # Used by `tauri dev` to enable the custom protocol on desktop.

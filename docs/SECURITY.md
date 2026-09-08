@@ -136,6 +136,17 @@ The token lives in the desktop's database, which is encrypted at rest
 pairing with it. On the server only SHA-256 digests of tokens and pairing
 codes are stored, so a copied server database grants nothing.
 
+## On the phone (ADR-040)
+
+The Android build keeps the database in the app's private directory, which
+no other app can read, and relies on Android's file-based encryption — on
+whenever the phone has a lock screen — instead of SQLCipher. The APK is
+signed with a key held only in the repository's secrets, which is what
+stops anyone else from shipping an "update" to an installed phone; the CI
+action signs with a throwaway key when the secret is absent and says so.
+The phone allows plain HTTP to a sync server on the local network; an
+internet server sits behind HTTPS (server/HOSTING.md).
+
 ## Rules
 
 Never:
@@ -162,5 +173,6 @@ Stated plainly rather than left implicit:
 | Database not encrypted | a stolen laptop exposes everything | ADR-018 |
 | Permissions not enforced | the server authenticates devices, not people; blocking for a web client | ADR-020 |
 | Server speaks plain HTTP | must sit on a private network or behind a TLS proxy | ADR-039 |
+| Phone database not SQLCipher | protected by Android's own encryption, only with a lock screen set | ADR-040 |
 | Installer unsigned | SmartScreen warns on first run | ADR-021 |
 | Audit log not surfaced | written but not readable in the UI | ADR-020 |

@@ -19,9 +19,16 @@ const libRs = fileURLToPath(new URL('../../src-tauri/src/lib.rs', import.meta.ur
 
 function rustCommandNames(): string[] {
   const source = readFileSync(commandsRs, 'utf8');
-  return [...source.matchAll(/#\[tauri::command\]\s*pub (?:async )?fn (\w+)/g)].map(
-    (match) => match[1]!,
-  );
+  // A command may be defined twice behind `cfg(target_os = …)` — the desktop
+  // and Android variants of `search_contacts` (ADR-040) — and is still one
+  // command at the IPC boundary.
+  return [
+    ...new Set(
+      [...source.matchAll(/#\[tauri::command\]\s*pub (?:async )?fn (\w+)/g)].map(
+        (match) => match[1]!,
+      ),
+    ),
+  ];
 }
 
 function registeredHandlers(): string[] {

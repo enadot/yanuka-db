@@ -49,7 +49,7 @@ export function CategoryScreen() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4 p-6">
+      <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
         <Skeleton className="h-16 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -58,7 +58,7 @@ export function CategoryScreen() {
 
   if (!category) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="mx-auto max-w-4xl p-4 md:p-6">
         <EmptyState
           title="הקטגוריה לא נמצאה"
           description="ייתכן שנמחקה."
@@ -79,7 +79,7 @@ export function CategoryScreen() {
     );
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1">
         <Link to="/categories">
           <ArrowRight className="size-4" aria-hidden />

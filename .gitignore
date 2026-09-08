@@ -13,7 +13,9 @@ out/
 # Rust / Tauri
 target/
 apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/gen/
+# Tauri regenerates the schemas; the Android project (gen/android) is ours
+# to keep — icons, signing, manifest — and is committed (ADR-040).
+apps/desktop/src-tauri/gen/schemas/
 
 # Local databases and backups — never commit real contact data
 *.db

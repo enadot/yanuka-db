@@ -40,7 +40,13 @@ createRoot(container).render(
             <HashRouter>
               <App />
             </HashRouter>
-            <Toaster position="bottom-left" dir="rtl" richColors />
+            <Toaster
+              position="bottom-left"
+              dir="rtl"
+              richColors
+              // Above the phone layout's bottom bar (ADR-040).
+              mobileOffset={{ bottom: '5.5rem' }}
+            />
           </TooltipProvider>
         </RepositoryProvider>
       </QueryClientProvider>

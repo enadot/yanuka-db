@@ -126,7 +126,7 @@ export function NotebookPageScreen() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
       <div className="flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
           <Link to="/notebooks" className="text-muted-foreground hover:text-foreground">

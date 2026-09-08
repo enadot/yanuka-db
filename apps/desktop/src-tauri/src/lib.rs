@@ -65,8 +65,10 @@ pub fn run() {
             // index in small budgeted steps so the first launch after an
             // upgrade indexes the whole archive without ever holding the
             // database lock long enough for the UI to notice.
+            #[cfg(not(target_os = "android"))]
             let resources =
                 app.path().resolve("resources/semantic", tauri::path::BaseDirectory::Resource);
+            #[cfg(not(target_os = "android"))]
             if let Ok(directory) = resources {
                 match yanuka_db::semantic::SemanticEngine::load(
                     &directory.join("model.onnx"),

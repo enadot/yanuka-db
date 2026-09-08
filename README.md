@@ -43,7 +43,7 @@ installer attached.
 ## Layout
 
 ```
-apps/desktop        React + shadcn/ui frontend, and the Tauri shell
+apps/desktop        React + shadcn/ui frontend, and the Tauri shell (Windows + Android)
 crates/yanuka-db    rusqlite storage, migrations, FTS5 search, sync engine (no Tauri dep)
 crates/yanuka-search Hebrew normalization and ranking            (no Tauri dep)
 server/yanuka-server the sync server: axum over yanuka-db        (no Tauri dep)
@@ -154,6 +154,14 @@ pnpm --filter @yanuka/desktop dev
 
 Changes are not saved between runs; everything else behaves identically.
 
+## Running on Android
+
+Every release also attaches `OtzarShlomo_<version>_android.apk`: open it on
+the phone and install — no store, no account. The phone keeps its own full
+archive and syncs through the server. Installing, updating and what differs
+on a phone: [`docs/ANDROID.md`](docs/ANDROID.md) (Hebrew). Building the APK
+locally needs the Android SDK/NDK and Java 21; the same file says which.
+
 ## The design rules worth knowing before editing
 
 - **UI is shadcn/ui only.** Every element is a registry component composed with
@@ -182,8 +190,10 @@ rule-driven categories with home-screen navigation shipped in 0.9.0
 (ADR-038) — all entirely on the machine. Sync between devices through a
 small self-hosted server shipped in 0.10.0 (ADR-039): field-by-field
 merging, conflicts decided by a person, and nothing waiting on the network.
-See [`server/README.md`](server/README.md) to run the server.
+See [`server/README.md`](server/README.md) to run the server and
+[`server/HOSTING.md`](server/HOSTING.md) for where. The Android app shipped
+in 0.11.0 (ADR-040): the same code, sideloaded from the Releases page.
 
 Designed and deliberately deferred, each with its cost recorded in
 [`docs/DECISIONS.md`](docs/DECISIONS.md): permission enforcement and the
-web and Android clients — all three now stand on the server that exists.
+web client — both stand on the server that exists.

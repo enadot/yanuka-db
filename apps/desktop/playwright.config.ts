@@ -25,12 +25,26 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: /mobile\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
           // Provided by the environment image; never downloaded at test time.
           // Falls back to Playwright's own resolution when unset, which is what
           // GitHub Actions uses after `playwright install chromium`.
+          executablePath: process.env.CHROMIUM_PATH || undefined,
+        },
+      },
+    },
+    // The phone layout (ADR-040), on a phone-sized viewport with touch. The
+    // same Chromium binary drives the emulated device.
+    {
+      name: 'mobile',
+      testMatch: /mobile\.spec\.ts/,
+      use: {
+        ...devices['Pixel 7'],
+        browserName: 'chromium',
+        launchOptions: {
           executablePath: process.env.CHROMIUM_PATH || undefined,
         },
       },

@@ -86,7 +86,7 @@ export function ContactDetailScreen() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-4xl space-y-4 p-6">
+      <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -95,7 +95,7 @@ export function ContactDetailScreen() {
 
   if (!contact) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
+      <div className="mx-auto max-w-4xl p-4 md:p-6">
         <EmptyState
           icon={<UserX />}
           title="איש הקשר לא נמצא"
@@ -127,7 +127,7 @@ export function ContactDetailScreen() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-6">
+    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1">
         <Link to="/contacts">
           <ArrowRight className="size-4" aria-hidden />
@@ -135,7 +135,7 @@ export function ContactDetailScreen() {
         </Link>
       </Button>
 
-      <header className="flex items-start gap-4">
+      <header className="flex flex-wrap items-start gap-4">
         <ContactAvatar
           size="lg"
           name={contact.displayName}
@@ -163,7 +163,7 @@ export function ContactDetailScreen() {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1 max-sm:w-full max-sm:justify-end">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

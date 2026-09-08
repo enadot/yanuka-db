@@ -219,7 +219,7 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
 
   if (mode === 'edit' && isLoading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 p-6">
+      <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-96 w-full" />
       </div>
@@ -229,7 +229,7 @@ export function ContactEditScreen({ mode }: ContactEditScreenProps) {
   const selectedTags = form.watch('tagIds') ?? [];
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-6">
+    <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
       <Button asChild variant="ghost" size="sm" className="-ms-2 gap-1">
         <Link to={mode === 'edit' && id ? `/contacts/${id}` : '/contacts'}>
           <ArrowRight className="size-4" aria-hidden />

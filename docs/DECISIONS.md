@@ -731,3 +731,71 @@ optional `ureq` in the storage crate; `axum` and `tokio` in the server; a
 thread in the desktop. Users and permissions are still not enforced
 (ADR-020): the server authenticates *devices*; a person's role arrives with
 the web client.
+
+## ADR-040 — אנדרואיד: אותו קוד ב-Tauri, APK מצורף לשחרור, בלי Google Play
+
+The user asked for the application on Android, privately — "how do I
+download it? APK? do we upload to Google Play? I want it private for
+real." ARCHITECTURE.md had pencilled in React Native for mobile, before the
+desktop shell existed.
+
+Decisions, and what each buys:
+
+- **Tauri's Android target, not React Native.** The app is already Tauri 2,
+  which builds for Android: the same React screens run in the system
+  WebView, and the same `yanuka-db` — SQLite, the Hebrew search, notebook
+  import, the sync engine — compiles for arm64. The phone gets a full local
+  archive that works without a network and syncs through the server
+  (ADR-039). React Native would have meant rewriting every screen without
+  `@yanuka/ui`; a browser client would have meant a phone that works only
+  online. Neither serves the product's first two priorities.
+- **A sideloaded APK on the Releases page, no store.** Every release
+  attaches `OtzarShlomo_<version>_android.apk` next to the Windows
+  installer; the phone opens the link and installs, and updates the same
+  way. Google Play's private tracks would add a developer account, a
+  review, a published privacy policy and a Google account on every phone —
+  for one thing the APK lacks, automatic updates. Not worth it for a
+  private tool; possible later.
+- **One signing key, kept in the repository's secrets.** Android installs
+  an update only over the same signature, so the key is what makes
+  "install the next APK over the old one" work and what keeps anyone else
+  from shipping an "update" to that phone. The CI action signs with the
+  key from `ANDROID_KEYSTORE_BASE64` when it is set and with a throwaway
+  key otherwise — loudly, so a fork or a first run still produces an APK
+  that installs, and the warning says why the next one will not update it.
+  The keystore itself is never committed.
+- **Two things compiled out on the phone, on purpose.** The embedding model
+  (no Android binaries for the runtime, and 120 MB would triple the APK):
+  search on the phone is the lexical layers — the same normalizer,
+  phonetics and ranking — and "לפי משמעות" says it is desktop-only. And
+  SQLCipher (a vendored OpenSSL cross-build for a benefit Android already
+  provides): the phone's own file-based encryption protects app storage
+  once the phone has a lock screen, and the database lives in the app's
+  private directory that no other app can read. Both are Cargo target
+  tables, not forks of the code: the shell compiles the same `state.rs`
+  and `commands.rs` with `cfg(target_os = "android")` around the two
+  spots that differ.
+- **The phone layout follows the viewport, not the platform.** Below 768
+  px the side rail becomes a bottom bar and a floating add button, facets
+  move into a drawer, the contact table becomes tappable rows. A narrow
+  desktop window gets the same, and the browser build tests it with a
+  Pixel-sized Playwright project — the phone chrome never depends on a
+  phone to be exercised.
+- **Plain HTTP is allowed for the sync server.** Android blocks cleartext
+  by default; a home server on the LAN speaks HTTP (server/README.md,
+  shape 1). The manifest allows it; an internet server sits behind HTTPS
+  regardless.
+- **`gen/android` is committed.** Tauri generates it once; the icons, the
+  signing configuration and the manifest permission are ours to keep, so
+  it is a normal part of the source tree (the schemas directory stays
+  generated and ignored).
+
+Rejected: Google Play (above); a PWA (no local database worth the name, and
+online-only); React Native (a second UI); bundling the model (APK size);
+committing the keystore (SECURITY.md's first rule).
+
+Cost: an Android job in CI (~10 minutes, cached), the `gen/android`
+tree, `tauri.android.conf.json` with no bundled resources, and a few
+`cfg(target_os = "android")` lines. The phone cannot yet take photos of
+notebook pages straight into the importer — the file picker works, the
+camera is a later plugin.

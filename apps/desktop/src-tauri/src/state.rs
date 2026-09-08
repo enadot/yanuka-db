@@ -3,8 +3,16 @@ use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
 use yanuka_db::rusqlite::Connection;
-use yanuka_db::semantic::SemanticEngine;
 use yanuka_db::{encryption, migrate, open, DbError};
+
+/// The embedding engine, where the build has one. On Android the semantic
+/// layer is compiled out (ADR-040) and this is the unit type, so
+/// `Option<&Engine>` is exactly the `Meaning` the storage crate expects on
+/// both platforms and nothing else in the shell has to care.
+#[cfg(not(target_os = "android"))]
+pub type Engine = yanuka_db::semantic::SemanticEngine;
+#[cfg(target_os = "android")]
+pub type Engine = ();
 
 use crate::keys;
 
@@ -35,7 +43,7 @@ struct Security {
 /// "unavailable". The counters describe the background catch-up so settings
 /// can show progress instead of a spinner.
 struct Semantic {
-    engine: Option<Arc<SemanticEngine>>,
+    engine: Option<Arc<Engine>>,
     indexed: usize,
     pending: usize,
     catching_up: bool,
@@ -79,6 +87,7 @@ impl AppState {
     /// visible status, never to a refusal to start. The one state that blocks
     /// is an encrypted file without its key, where opening is impossible by
     /// construction and only the recovery key helps.
+    #[cfg(not(target_os = "android"))]
     pub fn open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let Some(key) = keys::load_or_create() else {
             // No credential store (a development build on Linux/macOS).
@@ -128,6 +137,17 @@ impl AppState {
         }
     }
 
+    /// On the phone (ADR-040) there is no credential store and no SQLCipher:
+    /// the database sits in the app's private directory, which Android
+    /// encrypts itself once the phone has a lock screen. A file cannot be
+    /// locked here, because nothing here ever encrypted one.
+    #[cfg(target_os = "android")]
+    pub fn open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        let connection = open_ready(path, None)?;
+        let security = Security { encrypted: false, key_hex: None, key_persisted: false };
+        Ok(Self::assemble(DbState::Ready(connection), security, path))
+    }
+
     fn assemble(state: DbState, security: Security, path: &Path) -> Self {
         Self {
             inner: Mutex::new(state),
@@ -145,13 +165,13 @@ impl AppState {
     }
 
     /// Hand the loaded embedding model to the state; called once at setup.
-    pub fn attach_semantic(&self, engine: SemanticEngine) {
+    pub fn attach_semantic(&self, engine: Engine) {
         let mut semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         semantic.engine = Some(Arc::new(engine));
         semantic.catching_up = true;
     }
 
-    pub fn semantic_engine(&self) -> Option<Arc<SemanticEngine>> {
+    pub fn semantic_engine(&self) -> Option<Arc<Engine>> {
         let semantic = self.semantic.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         semantic.engine.clone()
     }
@@ -182,6 +202,7 @@ impl AppState {
     /// Failures are swallowed by design: a stale vector row is a worse search
     /// result, not a broken application, and the reconciler will retry it on
     /// the next startup catch-up.
+    #[cfg(not(target_os = "android"))]
     pub fn semantic_touch(&self, contact_id: &str) {
         let Some(engine) = self.semantic_engine() else {
             return;
@@ -200,6 +221,10 @@ impl AppState {
             Ok(())
         });
     }
+
+    /// No vectors on Android: nothing to bring up to date.
+    #[cfg(target_os = "android")]
+    pub fn semantic_touch(&self, _contact_id: &str) {}
 
     // -- sync (ADR-039) ---------------------------------------------------
 

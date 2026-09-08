@@ -1,0 +1,27 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+key.properties
+keystore.properties
+
+/.tauri
+/tauri.settings.gradle
+# Written by `tauri android build` on every run: the frontend bundle, the
+# cross-compiled library, and the version/proguard glue. Never hand-edited.
+/app/tauri.properties
+/app/tauri.build.gradle.kts
+/app/proguard-tauri.pro
+/app/src/main/assets/
+/app/src/main/jniLibs/

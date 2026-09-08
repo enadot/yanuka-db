@@ -20,10 +20,19 @@ use crate::sync;
 
 type Answer<T> = Result<T, DbError>;
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub fn search_contacts(state: State<'_, AppState>, input: SearchQuery) -> Answer<SearchResponse> {
     let engine = state.semantic_engine();
     state.with(|connection| search::search_with_semantic(connection, engine.as_deref(), &input))
+}
+
+/// The lexical layers only (ADR-040): the same normalizer, phonetics and
+/// ranking, without the embedding pass.
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn search_contacts(state: State<'_, AppState>, input: SearchQuery) -> Answer<SearchResponse> {
+    state.with(|connection| search::search(connection, &input))
 }
 
 /// Typeahead for the command palette.
@@ -695,7 +704,7 @@ pub async fn connect_sync(
                 .map(|name| name.trim().to_string())
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(sync::default_device_name),
-            kind: "desktop".into(),
+            kind: if cfg!(target_os = "android") { "android" } else { "desktop" }.into(),
             platform: Some(std::env::consts::OS.into()),
             app_version: Some(app_version),
         };

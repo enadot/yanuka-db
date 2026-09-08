@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { SearchX, Star, Clock, Plus } from 'lucide-react';
+import { SearchX, SlidersHorizontal, Star, Clock, Plus } from 'lucide-react';
 import type { FacetFilters } from '@yanuka/types';
 import { formatSubtitle, initials } from '@yanuka/core';
 import {
@@ -16,8 +16,14 @@ import {
   SelectTrigger,
   SelectValue,
   Skeleton,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
 } from '@yanuka/ui';
 import { useDebouncedValue } from '../hooks/use-debounced-value';
+import { useIsMobile } from '../hooks/use-viewport';
 import { useFavoriteContacts, useRecentContacts, useSearch } from '../hooks/use-contacts';
 import { SearchResultRow } from '../components/search/search-result-row';
 import { FacetPanel } from '../components/search/facet-panel';
@@ -62,7 +68,7 @@ export function HomeScreen() {
   };
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-4 md:p-6">
       <section className="space-y-3 pt-6 text-center">
         <h1 className="text-2xl font-semibold">את מי מחפשים?</h1>
         <Input
@@ -112,6 +118,7 @@ function SearchResults({
   onSortChange: (sort: 'relevance' | 'name' | 'recently_updated') => void;
   query: string;
 }) {
+  const mobile = useIsMobile();
   if (loading && !data) {
     return (
       <div className="space-y-2">
@@ -142,9 +149,17 @@ function SearchResults({
     );
   }
 
+  const activeFilters = Object.values(filters).reduce(
+    (total, values) => total + (values?.length ?? 0),
+    0,
+  );
+
   return (
     <div className="flex gap-6">
-      <FacetPanel facets={data.facets} filters={filters} onChange={onFiltersChange} />
+      {/* On a phone the facets live in a drawer; the results get the width. */}
+      {!mobile ? (
+        <FacetPanel facets={data.facets} filters={filters} onChange={onFiltersChange} />
+      ) : null}
 
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -154,6 +169,29 @@ function SearchResults({
               <span className="ms-2 text-xs">({data.tookMs} מילישניות)</span>
             ) : null}
           </p>
+
+          {mobile ? (
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5" data-testid="mobile-facets">
+                  <SlidersHorizontal className="size-4" aria-hidden />
+                  צמצום
+                  {activeFilters > 0 ? <span className="numeric">({activeFilters})</span> : null}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="max-h-[80vh] overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>צמצום תוצאות</SheetTitle>
+                </SheetHeader>
+                <FacetPanel
+                  className="w-full px-4 pb-4"
+                  facets={data.facets}
+                  filters={filters}
+                  onChange={onFiltersChange}
+                />
+              </SheetContent>
+            </Sheet>
+          ) : null}
 
           <Select value={sort} onValueChange={(value) => onSortChange(value as typeof sort)}>
             <SelectTrigger className="w-40" aria-label="מיון תוצאות">

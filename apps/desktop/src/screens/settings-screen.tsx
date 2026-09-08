@@ -40,8 +40,10 @@ import {
   type SecurityStatus,
   type SemanticStatus,
 } from '../lib/desktop-io';
+import { isDesktopApp } from '../lib/platform';
 import { useRepository } from '../lib/repository';
 import { useIsLocalDatabase } from '../lib/repository';
+import { useIsMobile } from '../hooks/use-viewport';
 
 /**
  * Settings and database status.
@@ -55,6 +57,8 @@ export function SettingsScreen() {
   const { data: tags = [] } = useTags();
   const { data: categories = [] } = useCategories();
   const isLocal = useIsLocalDatabase();
+  const desktop = isDesktopApp();
+  const mobile = useIsMobile();
   const repository = useRepository();
   const [backup, setBackup] = useState<BackupStatus | null>(null);
   const [busy, setBusy] = useState<'backup' | 'export' | null>(null);
@@ -123,7 +127,7 @@ export function SettingsScreen() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className="mx-auto max-w-3xl space-y-6 p-4 md:p-6">
       <h1 className="text-xl font-semibold">הגדרות</h1>
 
       {!isLocal ? (
@@ -161,17 +165,22 @@ export function SettingsScreen() {
             ייבוא
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center justify-between gap-4">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
             ייבוא אנשי קשר מקובץ CSV, ואיתור כפילויות שנוצרו ממקורות שונים.
           </p>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button asChild variant="outline">
               <Link to="/import">ייבוא מקובץ</Link>
             </Button>
             <Button asChild variant="outline">
               <Link to="/duplicates">איתור כפילויות</Link>
             </Button>
+            {mobile ? (
+              <Button asChild variant="outline">
+                <Link to="/notebooks">מחברות</Link>
+              </Button>
+            ) : null}
           </div>
         </CardContent>
       </Card>
@@ -186,33 +195,38 @@ export function SettingsScreen() {
         <CardContent className="space-y-3">
           {isLocal ? (
             <p className="text-sm text-muted-foreground">
-              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים.
-              {' '}
-              גיבוי אחרון:{' '}
+              גיבוי אוטומטי נלקח פעם ביום בעת פתיחת התוכנה ונשמר ליד מסד הנתונים. גיבוי אחרון:{' '}
               <span data-testid="last-backup">
                 {backup?.lastBackupAt ? formatDateTime(backup.lastBackupAt) : 'טרם נלקח'}
               </span>
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני.
-              ייצוא ה־CSV פועל גם כאן.
+              בגרסת שולחן העבודה נלקח גיבוי אוטומטי פעם ביום, וניתן לגבות ידנית להתקן חיצוני. ייצוא
+              ה־CSV פועל גם כאן.
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            {isLocal ? (
+            {isLocal && desktop ? (
               <Button onClick={() => void runBackup()} disabled={busy !== null}>
                 {busy === 'backup' ? 'מגבה…' : 'גיבוי עכשיו…'}
               </Button>
             ) : null}
-            <Button
-              variant="outline"
-              onClick={() => void runExport()}
-              disabled={busy !== null}
-              data-testid="export-csv"
-            >
-              {busy === 'export' ? 'מייצא…' : 'ייצוא כל אנשי הקשר ל־CSV'}
-            </Button>
+            {desktop || !isLocal ? (
+              <Button
+                variant="outline"
+                onClick={() => void runExport()}
+                disabled={busy !== null}
+                data-testid="export-csv"
+              >
+                {busy === 'export' ? 'מייצא…' : 'ייצוא כל אנשי הקשר ל־CSV'}
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                גיבוי להתקן חיצוני וייצוא CSV זמינים באפליקציית המחשב. בטלפון הגיבוי היומי נשמר בתוך
+                האפליקציה, והסנכרון מחזיק עותק מלא בשרת.
+              </p>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
             קובץ הייצוא נפתח באקסל ומתייבא חזרה דרך מסך הייבוא ללא הגדרה נוספת.
@@ -244,9 +258,8 @@ export function SettingsScreen() {
                 <KeyRound className="size-4" />
                 <AlertTitle>מפתח השחזור</AlertTitle>
                 <AlertDescription>
-                  אם Windows יותקן מחדש או שהמחשב יוחלף, המאגר והגיבויים ייפתחו רק עם
-                  המפתח הזה. מומלץ להציג אותו פעם אחת, לכתוב או להדפיס, ולשמור מחוץ
-                  למחשב.
+                  אם Windows יותקן מחדש או שהמחשב יוחלף, המאגר והגיבויים ייפתחו רק עם המפתח הזה.
+                  מומלץ להציג אותו פעם אחת, לכתוב או להדפיס, ולשמור מחוץ למחשב.
                 </AlertDescription>
               </Alert>
               {revealedKey ? (
@@ -279,13 +292,13 @@ export function SettingsScreen() {
             </>
           ) : security?.state === 'plaintext' ? (
             <p className="text-sm text-muted-foreground" data-testid="security-state">
-              המאגר אינו מוצפן בסביבה הזו — אחסון האישורים של מערכת ההפעלה אינו זמין,
-              או שהשדרוג להצפנה נכשל. הנתונים עצמם זמינים כרגיל.
+              המאגר אינו מוצפן בסביבה הזו — אחסון האישורים של מערכת ההפעלה אינו זמין, או שהשדרוג
+              להצפנה נכשל. הנתונים עצמם זמינים כרגיל.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground" data-testid="security-state">
-              הצפנת המאגר פעילה באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה בזיכרון,
-              ואין קובץ שדורש הצפנה.
+              הצפנת המאגר פעילה באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה בזיכרון, ואין קובץ שדורש
+              הצפנה.
             </p>
           )}
         </CardContent>
@@ -301,24 +314,23 @@ export function SettingsScreen() {
         <CardContent className="space-y-3">
           {semantic?.state === 'ready' ? (
             <p className="text-sm text-muted-foreground" data-testid="semantic-state">
-              פעיל. החיפוש מבין גם ניסוח חופשי — "עסקן מלונדון שעוזר עם בתי כנסת"
-              ימצא את ההערה גם כשאף מילה לא זהה. הכול מחושב במחשב הזה, ללא
-              אינטרנט. {semantic.indexed > 0 ? `${semantic.indexed} מסמכים באינדקס.` : ''}
+              פעיל. החיפוש מבין גם ניסוח חופשי — "עסקן מלונדון שעוזר עם בתי כנסת" ימצא את ההערה גם
+              כשאף מילה לא זהה. הכול מחושב במחשב הזה, ללא אינטרנט.{' '}
+              {semantic.indexed > 0 ? `${semantic.indexed} מסמכים באינדקס.` : ''}
             </p>
           ) : semantic?.state === 'indexing' ? (
             <p className="text-sm text-muted-foreground" data-testid="semantic-state">
-              בונה את אינדקס המשמעות ברקע — נותרו {semantic.pending} מסמכים. אפשר
-              להמשיך לעבוד כרגיל; החיפוש ישתפר ככל שהאינדקס מתקדם.
+              בונה את אינדקס המשמעות ברקע — נותרו {semantic.pending} מסמכים. אפשר להמשיך לעבוד
+              כרגיל; החיפוש ישתפר ככל שהאינדקס מתקדם.
             </p>
           ) : semantic?.state === 'unavailable' ? (
             <p className="text-sm text-muted-foreground" data-testid="semantic-state">
-              מודל השפה אינו זמין בהתקנה הזו; החיפוש הרגיל עובד כרגיל. התקנה מחדש
-              מהגרסה העדכנית תחזיר את היכולת.
+              מודל השפה אינו זמין בהתקנה הזו; החיפוש הרגיל עובד כרגיל. התקנה מחדש מהגרסה העדכנית
+              תחזיר את היכולת.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground" data-testid="semantic-state">
-              חיפוש לפי משמעות פעיל באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה
-              והחיפוש הרגיל בלבד.
+              חיפוש לפי משמעות פעיל באפליקציית המחשב. בדפדפן מוצגים נתוני הדגמה והחיפוש הרגיל בלבד.
             </p>
           )}
         </CardContent>

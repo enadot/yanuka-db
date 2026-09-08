@@ -1,0 +1,87 @@
+name: Build the Android APK
+description: >-
+  Toolchain, signing and `tauri android build` for a release APK (ADR-040).
+  Signs with the keystore from the repository secrets when they are set;
+  otherwise with a throwaway key, so the pipeline stays green on a fork or
+  before the secrets exist — such an APK installs, but the next one will not
+  update over it (Android requires the same signature).
+
+inputs:
+  keystore-base64:
+    description: The release keystore (.jks), base64-encoded. Empty = throwaway key.
+    required: false
+    default: ''
+  keystore-password:
+    description: Password of the keystore and of the key inside it.
+    required: false
+    default: ''
+  key-alias:
+    description: Alias of the key inside the keystore.
+    required: false
+    default: 'otzar'
+
+outputs:
+  apk:
+    description: Path of the signed release APK.
+    value: ${{ steps.collect.outputs.apk }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - uses: android-actions/setup-android@v3
+      with:
+        packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.2.12479018'
+
+    - name: Point the Rust build at the NDK
+      shell: bash
+      run: echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+    - name: Rust targets for Android
+      shell: bash
+      run: rustup target add aarch64-linux-android
+
+    - name: Signing key
+      shell: bash
+      env:
+        KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        KEYSTORE_PASSWORD: ${{ inputs.keystore-password }}
+        KEY_ALIAS: ${{ inputs.key-alias }}
+      run: |
+        app="apps/desktop/src-tauri/gen/android/app"
+        store="$RUNNER_TEMP/release.jks"
+        if [ -n "$KEYSTORE_BASE64" ]; then
+          echo "$KEYSTORE_BASE64" | base64 -d > "$store"
+          password="$KEYSTORE_PASSWORD"
+          alias="$KEY_ALIAS"
+          echo "signing with the repository's release key"
+        else
+          password="throwaway-$(date +%s)"
+          alias="throwaway"
+          keytool -genkeypair -keystore "$store" -alias "$alias" -keyalg RSA -keysize 2048 \
+            -validity 30 -storepass "$password" -keypass "$password" \
+            -dname "CN=throwaway, O=CI, C=IL" >/dev/null 2>&1
+          echo "::warning::ANDROID_KEYSTORE_BASE64 is not set — signing with a throwaway key; this APK cannot update an installed one"
+        fi
+        printf 'storeFile=%s\npassword=%s\nkeyAlias=%s\n' "$store" "$password" "$alias" > "$app/keystore.properties"
+
+    - name: Build the APK
+      shell: bash
+      run: pnpm --filter @yanuka/desktop tauri android build --apk --target aarch64 --ci
+
+    - name: Collect the APK
+      id: collect
+      shell: bash
+      run: |
+        apk=$(find apps/desktop/src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' ! -name '*unsigned*' | head -n 1)
+        if [ -z "$apk" ]; then
+          echo "no signed release APK was produced" >&2
+          find apps/desktop/src-tauri/gen/android/app/build/outputs -name '*.apk' >&2 || true
+          exit 1
+        fi
+        echo "apk=$apk" >> "$GITHUB_OUTPUT"
+        ls -la "$apk"

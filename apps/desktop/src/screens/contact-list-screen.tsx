@@ -27,15 +27,10 @@ import {
   ToggleGroupItem,
 } from '@yanuka/ui';
 import { useContactList } from '../hooks/use-contacts';
+import { useIsMobile } from '../hooks/use-viewport';
 
 /** Hebrew alphabet, plus Latin and a bucket for everything else. */
-const ALPHABET = [
-  ...'אבגדהוזחטיכלמנסעפצקרשת'.split(''),
-  'A',
-  'M',
-  'S',
-  '#',
-];
+const ALPHABET = [...'אבגדהוזחטיכלמנסעפצקרשת'.split(''), 'A', 'M', 'S', '#'];
 
 /**
  * Browse the whole database.
@@ -62,6 +57,8 @@ export function ContactListScreen() {
     includeDeleted: false,
   });
 
+  const mobile = useIsMobile();
+
   const reset = (mutate: () => void) => {
     // Any change to filtering or ordering invalidates the cursor: it points at
     // a position in a sequence that no longer exists.
@@ -71,8 +68,8 @@ export function ContactListScreen() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-6">
-      <header className="flex items-center justify-between gap-3">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">אנשי קשר</h1>
           {data ? (
@@ -103,12 +100,14 @@ export function ContactListScreen() {
             </SelectContent>
           </Select>
 
-          <Button asChild>
-            <Link to="/contacts/new">
-              <Plus className="size-4" aria-hidden />
-              איש קשר חדש
-            </Link>
-          </Button>
+          {!mobile ? (
+            <Button asChild>
+              <Link to="/contacts/new">
+                <Plus className="size-4" aria-hidden />
+                איש קשר חדש
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -147,6 +146,44 @@ export function ContactListScreen() {
             </Button>
           }
         />
+      ) : mobile ? (
+        // One tappable row per person: the table's four columns do not fit a
+        // phone, and a person is found by name and subtitle anyway.
+        <div className="divide-y rounded-lg border" data-testid="contact-cards">
+          {data?.items.map((contact) => (
+            <Link
+              key={contact.id}
+              to={`/contacts/${contact.id}`}
+              className="flex min-h-14 items-center gap-3 px-3 py-2 active:bg-accent"
+              data-testid="contact-card-row"
+            >
+              <ContactAvatar
+                size="sm"
+                name={contact.displayName}
+                initials={initials(contact.displayName)}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-1.5 font-medium">
+                  <span className="truncate">
+                    {contact.prefix ? (
+                      <span className="text-muted-foreground">{contact.prefix} </span>
+                    ) : null}
+                    {contact.displayName}
+                  </span>
+                  {contact.isFavorite ? (
+                    <Star
+                      className="size-3.5 shrink-0 fill-amber-400 text-amber-400"
+                      aria-label="מועדף"
+                    />
+                  ) : null}
+                </span>
+                <span className="block truncate text-sm text-muted-foreground">
+                  {formatSubtitle(contact) || '—'}
+                </span>
+              </span>
+            </Link>
+          ))}
+        </div>
       ) : (
         <div className="rounded-lg border">
           <Table>
@@ -206,7 +243,10 @@ export function ContactListScreen() {
       )}
 
       <div className="flex items-center justify-between">
-        <Select value={String(limit)} onValueChange={(value) => reset(() => setLimit(Number(value)))}>
+        <Select
+          value={String(limit)}
+          onValueChange={(value) => reset(() => setLimit(Number(value)))}
+        >
           <SelectTrigger className="w-32" aria-label="שורות בעמוד">
             <SelectValue />
           </SelectTrigger>

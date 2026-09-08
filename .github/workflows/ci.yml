@@ -127,6 +127,41 @@ jobs:
           path: apps/desktop/playwright-report
           retention-days: 7
 
+  # The phone build (ADR-040): the same frontend and the same storage crate,
+  # cross-compiled for arm64 and wrapped by the Android shell.
+  android:
+    name: android · OtzarShlomo.apk
+    runs-on: ubuntu-latest
+    needs: [checks, rust]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: ./.github/actions/android-apk
+        id: apk
+        with:
+          keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OtzarShlomo-android
+          path: ${{ steps.apk.outputs.apk }}
+          retention-days: 30
+
   installer:
     name: windows · OtzarShlomoSetup.exe
     runs-on: windows-latest

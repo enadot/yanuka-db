@@ -8,6 +8,7 @@ import {
   Button,
   Checkbox,
   Label,
+  cn,
 } from '@yanuka/ui';
 
 const FACET_LABELS: Record<FacetField, string> = {
@@ -37,6 +38,8 @@ export interface FacetPanelProps {
   facets: Facets;
   filters: FacetFilters;
   onChange: (filters: FacetFilters) => void;
+  /** Overrides the default fixed width, e.g. inside a sheet on a phone. */
+  className?: string;
 }
 
 /**
@@ -50,7 +53,7 @@ export interface FacetPanelProps {
  * the other countries at zero. That is a known simplification; see
  * docs/SEARCH.md.
  */
-export function FacetPanel({ facets, filters, onChange }: FacetPanelProps) {
+export function FacetPanel({ facets, filters, onChange, className }: FacetPanelProps) {
   const activeCount = Object.values(filters).reduce(
     (total, values) => total + (values?.length ?? 0),
     0,
@@ -72,7 +75,7 @@ export function FacetPanel({ facets, filters, onChange }: FacetPanelProps) {
   if (available.length === 0) return null;
 
   return (
-    <aside className="w-60 shrink-0 space-y-3">
+    <aside className={cn('w-60 shrink-0 space-y-3', className)}>
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">צמצום תוצאות</h2>
         {activeCount > 0 ? (

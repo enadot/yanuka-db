@@ -56,7 +56,7 @@ So it does not:
 | `crates/yanuka-search` | no | yes |
 | `crates/yanuka-db` | no | yes |
 | `server/yanuka-server` | no | yes |
-| `apps/desktop/src-tauri` | yes | CI only |
+| `apps/desktop/src-tauri` | yes | CI only (Windows shell, Android shell) |
 
 ```bash
 cargo test -p yanuka-db -p yanuka-search   # works everywhere
@@ -134,8 +134,12 @@ changing what exists.
   already searchable. Screens and ranking are reused as-is; only the
   repository implementation is new — and this is where permissions
   (ADR-020) start being enforced.
-- **Android.** React Native cannot use `@yanuka/ui` (it is DOM-based), but
-  `types`, `validation`, `utils`, `search` and `core` all apply unchanged.
+- **Android** shipped in 0.11.0 (ADR-040) as the same Tauri shell: the
+  React screens in the system WebView, `yanuka-db` cross-compiled for
+  arm64, the phone layout chosen by viewport. `gen/android` holds the
+  generated Android project; `tauri.android.conf.json` drops the bundled
+  model; Cargo target tables leave the semantic and SQLCipher features out
+  of the phone build.
 - **Postgres.** Not needed at this scale (ADR-039); if it ever is, a second
   migrations directory under `packages/database/migrations/postgres`, with
   the dialect differences contained inside the repository implementation.
@@ -156,6 +160,7 @@ shape is documented here instead; ADR-017.
 | the server over HTTP | `cargo test -p yanuka-server` — real socket, real transport | anywhere |
 | normalizer conformance | shared JSON fixture, both languages | anywhere |
 | IPC name parity | regex over `commands.rs` vs `IPC_COMMANDS` | anywhere |
-| the real UI | Playwright + Chromium — 26 tests | anywhere |
+| the real UI | Playwright + Chromium — 26 desktop + 3 phone-viewport tests | anywhere |
+| the Android APK builds | `tauri android build` (composite action) | CI (ubuntu + SDK/NDK) |
 | the Tauri shell compiles | `cargo check -p yanuka-desktop` | CI (ubuntu + apt deps) |
 | the installer builds | `tauri build` | CI (windows-latest) |

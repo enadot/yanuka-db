@@ -1,8 +1,19 @@
 import { useCallback, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Home, LayoutGrid, NotebookPen, Plus, Search, Settings, Users } from 'lucide-react';
+import {
+  Home,
+  LayoutGrid,
+  NotebookPen,
+  Plus,
+  Search,
+  Settings,
+  TriangleAlert,
+  Users,
+} from 'lucide-react';
 import { Button, Separator, cn } from '@yanuka/ui';
+import { useSyncOverview } from '../../hooks/use-contacts';
 import { useCommandHotkey } from '../../hooks/use-hotkey';
+import { useIsMobile } from '../../hooks/use-viewport';
 import { GlobalSearchDialog } from '../search/global-search-dialog';
 import { ScreenErrorBoundary } from './screen-error-boundary';
 import { SyncIndicator } from './sync-indicator';
@@ -15,9 +26,13 @@ const NAV_ITEMS = [
   { to: '/settings', label: 'הגדרות', icon: Settings, end: false },
 ] as const;
 
+/** The four that fit a thumb's reach; notebooks live in settings on a phone. */
+const MOBILE_NAV = NAV_ITEMS.filter((item) => item.to !== '/notebooks');
+
 /**
  * Application chrome: a narrow right-hand rail, a thin header and the routed
- * screen.
+ * screen — or, on a phone-sized viewport, a compact header and a bottom bar
+ * (ADR-040). Same routes, same screens; only the chrome moves.
  *
  * The rail sits on the right because the document is RTL — that is the "start"
  * edge, where a reader's eye lands first. It is deliberately minimal: this is a
@@ -28,13 +43,104 @@ export function AppLayout() {
   const [commandOpen, setCommandOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const mobile = useIsMobile();
+  const { data: sync } = useSyncOverview();
+  const conflicts = sync?.openConflicts ?? 0;
 
   const openCommand = useCallback(() => setCommandOpen(true), []);
   useCommandHotkey('KeyK', openCommand);
 
+  if (mobile) {
+    // The "new contact" button hides on the form screens, where it would
+    // cover the save button.
+    const editing = /\/contacts\/(new|[^/]+\/edit)$/.test(location.pathname);
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="mobile-layout">
+        <header className="safe-top flex shrink-0 items-center gap-2 border-b bg-background px-3">
+          <Link to="/" className="flex h-12 items-center gap-2">
+            <img src="/logo.png" alt="" className="size-7" />
+            <span className="font-semibold">אוצר שלמה</span>
+          </Link>
+          <div className="ms-auto flex items-center">
+            {conflicts > 0 ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="size-11 text-amber-700"
+                aria-label={`${conflicts} התנגשויות סנכרון לטיפול`}
+              >
+                <Link to="/conflicts" data-testid="mobile-conflicts">
+                  <TriangleAlert className="size-5" aria-hidden />
+                </Link>
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-11"
+              onClick={openCommand}
+              aria-label="חיפוש מהיר"
+            >
+              <Search className="size-5" aria-hidden />
+            </Button>
+          </div>
+        </header>
+
+        <main className="pb-mobile-nav min-h-0 flex-1 overflow-y-auto">
+          <ScreenErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ScreenErrorBoundary>
+        </main>
+
+        {!editing ? (
+          <Button
+            size="icon"
+            className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] start-4 z-20 size-14 rounded-full shadow-lg"
+            onClick={() => navigate('/contacts/new')}
+            aria-label="איש קשר חדש"
+            data-testid="mobile-new-contact"
+          >
+            <Plus className="size-6" aria-hidden />
+          </Button>
+        ) : null}
+
+        <nav
+          className="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t bg-background"
+          aria-label="ניווט ראשי"
+          data-testid="mobile-nav"
+        >
+          <div className="grid h-16 grid-cols-4">
+            {MOBILE_NAV.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  cn(
+                    'flex flex-col items-center justify-center gap-1 text-xs',
+                    isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                  )
+                }
+              >
+                <item.icon className="size-5" aria-hidden />
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+
+        <GlobalSearchDialog open={commandOpen} onOpenChange={setCommandOpen} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0">
-      <nav className="flex w-52 shrink-0 flex-col gap-1 border-e bg-sidebar p-3">
+      <nav
+        className="flex w-52 shrink-0 flex-col gap-1 border-e bg-sidebar p-3"
+        data-testid="side-rail"
+      >
         <Link to="/" className="mb-4 flex items-center gap-2 px-2 py-1">
           <img src="/logo.png" alt="" className="size-9" />
           <span className="font-semibold">אוצר שלמה</span>
