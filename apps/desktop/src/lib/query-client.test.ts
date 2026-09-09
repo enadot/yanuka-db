@@ -49,9 +49,11 @@ describe('createQueryClient', () => {
     });
     // Left pending on purpose: nothing resumes a paused mutation here, and
     // that is the point.
-    void mutation.execute(undefined).catch(() => undefined);
-
     const outcome = await Promise.race([
+      mutation.execute(undefined).then(
+        () => 'ran',
+        () => 'failed',
+      ),
       new Promise<string>((resolve) => setTimeout(() => resolve('still waiting'), 50)),
     ]);
     expect(outcome).toBe('still waiting');

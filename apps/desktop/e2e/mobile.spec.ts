@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { goOffline } from './go-offline';
 
 /**
  * The phone layout (ADR-040), on a phone-sized viewport: the bottom bar and
@@ -55,8 +56,7 @@ test('the add button saves a contact with no network', async ({ page, context })
   // covered in offline.spec.ts. Offline only after the app has mounted.
   await page.goto('/');
   await expect(page.getByTestId('mobile-new-contact')).toBeVisible();
-  await context.setOffline(true);
-  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+  await goOffline(page, context);
 
   await page.getByTestId('mobile-new-contact').click();
   await page.getByLabel('שם מלא *').fill('לאה בלי רשת');

@@ -33,6 +33,8 @@ struct Wire<'a> {
     revoked: Cell<bool>,
     /// The server cannot be reached at all — no network, not a refusal.
     offline: Cell<bool>,
+    /// The line drops after the pull: every push fails.
+    fail_push: Cell<bool>,
 }
 
 impl<'a> Wire<'a> {
@@ -44,6 +46,7 @@ impl<'a> Wire<'a> {
             device,
             revoked: Cell::new(false),
             offline: Cell::new(false),
+            fail_push: Cell::new(false),
         }
     }
 
@@ -74,6 +77,9 @@ impl<'a> Wire<'a> {
 impl Transport for Wire<'_> {
     fn push(&self, items: &[PushItem]) -> yanuka_db::Result<Vec<PushResult>> {
         self.gate()?;
+        if self.fail_push.get() {
+            return Err(DbError::Sync("הקו נפל".into()));
+        }
         hub::accept(&mut self.hub.borrow_mut(), &self.device, items)
     }
 
@@ -681,6 +687,15 @@ fn a_record_held_by_a_conflict_can_still_be_edited_offline() {
     assert_eq!(open_conflicts(&b), 1);
     assert_eq!(phone_of(&a, &id), vec!["054-1111111"], "A never sees the held edits");
 
+    // Then the link drops. A failed cycle changes nothing on the card, nor
+    // the question still waiting for an answer.
+    wire_b.offline.set(true);
+    assert!(matches!(sync::run_cycle(&b, &wire_b, None), Err(DbError::Sync(_))));
+    assert_eq!(phone_of(&b, &id), vec!["052-9999999"]);
+    assert_eq!(open_conflicts(&b), 1);
+    assert!(b.borrow().is_autocommit());
+    wire_b.offline.set(false);
+
     // The person looks at the card as it stands and says: this is right.
     let open = conflicts::list(&b.borrow()).unwrap();
     let conflict_id = open[0]["id"].as_str().unwrap().to_string();
@@ -692,4 +707,44 @@ fn a_record_held_by_a_conflict_can_still_be_edited_offline() {
     cycle(&a, &wire_a);
     assert_eq!(phone_of(&a, &id), vec!["052-9999999"]);
     assert_eq!(open_conflicts(&a), 0);
+}
+
+#[test]
+fn a_cycle_cut_off_after_the_pull_keeps_what_it_pulled_and_says_so() {
+    let hub = hub();
+    let a = db();
+    let b = db();
+    let wire_a = Wire::new(&hub, &a);
+    let wire_b = Wire::new(&hub, &b);
+    let from_a = repository::create_contact(&mut a.borrow_mut(), &contact("ברוך וייס", "1"), None)
+        .unwrap()
+        .contact
+        .id;
+    cycle(&a, &wire_a);
+    let from_b = repository::create_contact(&mut b.borrow_mut(), &contact("מרים כץ", "2"), None)
+        .unwrap()
+        .contact
+        .id;
+
+    // The pull goes through; then the line drops before the push.
+    wire_b.fail_push.set(true);
+    let (report, error) = sync::run_cycle_partial(&b, &wire_b, None);
+    assert!(matches!(error, Some(DbError::Sync(_))), "{error:?}");
+    assert_eq!((report.pulled, report.applied, report.pushed), (1, 1, 0), "{report:?}");
+    assert!(
+        report.touched_contacts.contains(&from_a),
+        "what arrived is reported for re-embedding even though the cycle failed: {report:?}"
+    );
+    assert!(repository::get_contact(&b.borrow(), &from_a).unwrap().is_some(), "and it is kept");
+    assert_eq!(pending(&b), 1, "B's own change is still waiting");
+    assert!(b.borrow().is_autocommit());
+    let status = sync::config::status(&b.borrow()).unwrap();
+    assert!(!status["lastError"].as_str().unwrap_or_default().is_empty());
+
+    // Next time the line holds, only the push is left to do.
+    wire_b.fail_push.set(false);
+    let report = cycle(&b, &wire_b);
+    assert_eq!((report.pulled, report.pushed), (0, 1), "nothing is pulled twice: {report:?}");
+    cycle(&a, &wire_a);
+    assert!(repository::get_contact(&a.borrow(), &from_b).unwrap().is_some());
 }

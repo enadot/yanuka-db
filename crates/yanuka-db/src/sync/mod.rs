@@ -30,7 +30,7 @@ use serde_json::Value;
 
 use crate::error::Result;
 
-pub use engine::{run_cycle, CycleReport, Database};
+pub use engine::{run_cycle, run_cycle_partial, CycleReport, Database};
 
 /// Entity types that sync, in the order they must be applied: a contact
 /// refers to tags, categories and organizations; notes and relationships

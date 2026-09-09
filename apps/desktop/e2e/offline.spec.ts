@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { goOffline } from './go-offline';
 
 /**
  * The offline guarantee (docs/PRODUCT.md, promise 1): everything local works
@@ -12,11 +13,6 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
  * the window's events, and the page itself still has to be served — and then
  * stays inside the SPA, since a page load would need the server.
  */
-
-async function goOffline(page: Page, context: BrowserContext) {
-  await context.setOffline(true);
-  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
-}
 
 test('a contact is added, edited, annotated and found with no network', async ({
   page,

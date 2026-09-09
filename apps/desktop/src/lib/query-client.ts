@@ -19,10 +19,13 @@ export function createQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         networkMode: 'always',
-        // Refetching on window focus would be pure waste against a local
-        // database, and retrying a failed local query just delays showing
-        // the user a real error.
+        // Refetching on window focus or on the network coming back would be
+        // pure waste against a local database (the library already derives
+        // the latter from 'always'; said here so it is read, not inferred),
+        // and retrying a failed local query just delays showing the user a
+        // real error.
         refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         retry: false,
         staleTime: 30_000,
       },

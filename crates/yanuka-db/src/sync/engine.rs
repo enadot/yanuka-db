@@ -621,8 +621,29 @@ pub fn run_cycle<D: Database>(
     transport: &dyn Transport,
     meaning: Meaning<'_>,
 ) -> Result<CycleReport> {
+    let (report, error) = run_cycle_partial(db, transport, meaning);
+    match error {
+        None => Ok(report),
+        Some(error) => Err(error),
+    }
+}
+
+/// `run_cycle`, but the report survives an error.
+///
+/// A pull can integrate hundreds of changes before the first push finds the
+/// link gone; those records are committed and the caller still has to act
+/// on `touched_contacts` (ADR-041). The error, when there is one, has also
+/// been written to `lastError` by the time this returns.
+pub fn run_cycle_partial<D: Database>(
+    db: &D,
+    transport: &dyn Transport,
+    meaning: Meaning<'_>,
+) -> (CycleReport, Option<crate::DbError>) {
     let mut report = CycleReport::default();
-    let me = db.with(|connection| device_id(connection))?;
+    let me = match db.with(|connection| device_id(connection)) {
+        Ok(me) => me,
+        Err(error) => return (report, Some(error)),
+    };
 
     let outcome = (|| -> Result<()> {
         pull_all(db, transport, &me, &mut report)?;
@@ -649,27 +670,24 @@ pub fn run_cycle<D: Database>(
         Ok(())
     })();
 
-    match outcome {
-        Ok(()) => {
-            db.with(|connection| {
-                config::set_meta(connection, KEY_LAST_AT, Some(&now_iso()))?;
-                config::set_meta(connection, KEY_LAST_ERROR, None)
-            })?;
-        }
-        Err(error) => {
-            db.with(|connection| {
+    let recorded = match outcome {
+        Ok(()) => db.with(|connection| {
+            config::set_meta(connection, KEY_LAST_AT, Some(&now_iso()))?;
+            config::set_meta(connection, KEY_LAST_ERROR, None)
+        }),
+        Err(error) => db
+            .with(|connection| {
                 config::set_meta(connection, KEY_LAST_ERROR, Some(&error.to_string()))
-            })?;
-            return Err(error);
-        }
-    }
+            })
+            .and(Err(error)),
+    };
 
     // Meaning-based categories see the new text only after the vectors are
     // rebuilt, which is the caller's job; the lexical ones are already right.
     let _ = meaning;
     report.touched_contacts.sort();
     report.touched_contacts.dedup();
-    Ok(report)
+    (report, recorded.err())
 }
 
 /// The shape the settings screen and the indicator read, with the live

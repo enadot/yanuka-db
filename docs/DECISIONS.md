@@ -845,6 +845,10 @@ Guards, so this stays fixed:
   writes, which all go up in one cycle later; and a record held by an open
   conflict is shown to remain editable offline and to go up as it stands
   after a manual resolution.
+- A cycle cut off half-way — the pull integrated changes, then the push found
+  the link gone — used to drop its report with the error, so the desktop
+  never re-embedded what had just arrived. `run_cycle_partial` hands the
+  report back alongside the error; the worker reads the report first.
 
 Not changed, on purpose: the Windows installer still downloads the WebView2
 runtime on a machine that lacks it (`webviewInstallMode` default). That is a

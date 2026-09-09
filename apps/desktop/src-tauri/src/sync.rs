@@ -81,22 +81,24 @@ pub fn run_cycle_now(state: &AppState, config: &SyncConfig) -> Result<CycleRepor
     let transport = HttpTransport::new(&config.server_url, &config.token)?;
     state.set_syncing(true);
     let engine = state.semantic_engine();
-    let outcome = yanuka_db::sync::run_cycle(state, &transport, engine.as_deref());
+    let (report, error) = yanuka_db::sync::run_cycle_partial(state, &transport, engine.as_deref());
     state.set_syncing(false);
-    match &outcome {
-        Ok(report) => {
-            state.set_online(true);
-            // Meaning-based search and categories see the new text only
-            // once the vectors are rebuilt.
-            for contact_id in &report.touched_contacts {
-                state.semantic_touch(contact_id);
-            }
-        }
-        // A refusal is not an outage; the server answered.
-        Err(DbError::Sync(_)) => state.set_online(false),
-        Err(_) => state.set_online(true),
+    // Meaning-based search and categories see the new text only once the
+    // vectors are rebuilt — including what a cycle pulled before its link
+    // dropped mid-way, which is why the report is read before the error.
+    for contact_id in &report.touched_contacts {
+        state.semantic_touch(contact_id);
     }
-    outcome
+    match &error {
+        None => state.set_online(true),
+        Some(DbError::Sync(_)) => state.set_online(false),
+        // A refusal is not an outage; the server answered.
+        Some(_) => state.set_online(true),
+    }
+    match error {
+        None => Ok(report),
+        Some(error) => Err(error),
+    }
 }
 
 /// The device's own name for the server's list: the machine name when the
