@@ -799,3 +799,55 @@ tree, `tauri.android.conf.json` with no bundled resources, and a few
 `cfg(target_os = "android")` lines. The phone cannot yet take photos of
 notebook pages straight into the importer — the file picker works, the
 camera is a later plugin.
+
+## ADR-041 — הממשק לעולם אינו ממתין לרשת
+
+The owner reported that on the main computer, with no network, a save did
+not happen — it went through only once the connection was back. The whole
+point of the product (PRODUCT.md, promise 1) is that everything local works
+without a network, and 0.1.0 through 0.11.0 all carried this defect.
+
+What happened: TanStack Query, which every screen uses to read and write
+through the repository, defaults to `networkMode: 'online'` — a query or a
+mutation is *paused* while the window reports itself offline and resumes on
+the next `online` event. The client in `main.tsx` never said otherwise. The
+window's `offline` event fires when Windows loses its last connected adapter
+(Wi-Fi off, cable out); an adapter that is connected but has no internet
+behind it usually still counts as online — which is why the archive worked
+at the desk and failed away from it. Nothing was lost: the save sat in the
+browser and landed when the network came back, which is exactly the symptom
+reported. A card never opened in the session showed "not found" for the same
+reason: its read was paused, not loading.
+
+Decision: **the UI layer never gates on browser connectivity.** The data
+source is a local database over Tauri IPC (or the in-memory repository in a
+browser); connectivity is not its business. `createQueryClient()` in
+`apps/desktop/src/lib/query-client.ts` sets `networkMode: 'always'` for both
+queries and mutations, and is a factory so a unit test can build the same
+client without mounting the app. The sync worker is the one part that does
+talk to the network, and it does so from Rust, off the UI thread, releasing
+the database before every call (SYNC.md, "The worker").
+
+Guards, so this stays fixed:
+
+- `query-client.test.ts` forces the online manager offline and proves a
+  mutation and a query still complete — and that with the library's defaults
+  they would not.
+- `e2e/offline.spec.ts` (and a case in `mobile.spec.ts`) takes the browser
+  offline after the app has mounted and adds, edits, annotates and finds a
+  contact through the real screens; a never-visited card opens instead of
+  saying "not found".
+- In `crates/yanuka-db/tests/sync.rs` the test transport asserts, on every
+  call, that the device's database is not borrowed — a `RefCell` makes this
+  deterministic — so holding the connection across a network call would fail
+  every sync test at once. A cycle against an unreachable server is shown to
+  fail cleanly, leave no transaction open and stay out of the way of local
+  writes, which all go up in one cycle later; and a record held by an open
+  conflict is shown to remain editable offline and to go up as it stands
+  after a manual resolution.
+
+Not changed, on purpose: the Windows installer still downloads the WebView2
+runtime on a machine that lacks it (`webviewInstallMode` default). That is a
+one-time install step, the runtime is already present on Windows 11 and on
+updated Windows 10, and an offline installer would add about 150 MB to every
+release. Recorded here so it is a decision rather than an oversight.

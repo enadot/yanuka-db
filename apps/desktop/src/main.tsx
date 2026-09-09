@@ -1,25 +1,17 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { Direction } from 'radix-ui';
 import { HashRouter } from 'react-router-dom';
 import { TooltipProvider, Toaster } from '@yanuka/ui';
+import { createQueryClient } from './lib/query-client';
 import { RepositoryProvider } from './lib/repository';
 import { App } from './App';
 import './styles/globals.css';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // The data source is a local database, not a network. Refetching on
-      // window focus would be pure waste, and retrying a failed local query
-      // just delays showing the user a real error.
-      refetchOnWindowFocus: false,
-      retry: false,
-      staleTime: 30_000,
-    },
-  },
-});
+// Configured in lib/query-client.ts — and tested there, because the one
+// setting that matters (never wait for the network) once went missing.
+const queryClient = createQueryClient();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element not found');

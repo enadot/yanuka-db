@@ -42,6 +42,14 @@ Two implementations exist, and both must pass `runRepositoryContractTests`:
   *real* demo dataset. Not a stub: it is what makes the app fully usable in a
   plain browser, which is how it is tested in CI.
 
+One more thing everything above the interface must never do: wait for the
+network. The screens read and write through TanStack Query, whose default is
+to pause while the window reports itself offline; the client in
+`apps/desktop/src/lib/query-client.ts` turns that off for queries and
+mutations alike, because the repository is local and connectivity is not its
+concern (ADR-041). The one part that does use the network — the sync worker —
+lives in Rust, off the UI thread, and releases the database before every call.
+
 ## Why the Rust side is three crates
 
 Tauri links against the system webview. On Linux that means `libwebkit2gtk`,

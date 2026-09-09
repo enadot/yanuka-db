@@ -161,7 +161,9 @@ and syncs when there are any, every 5 minutes it asks the server for news
 regardless, and "סנכרון עכשיו" or a resolved conflict wakes it at once. It
 never holds the database while it waits on the network — the engine borrows
 the connection step by step — so a search or a save is never queued behind a
-slow link.
+slow link. The test transport in `crates/yanuka-db/tests/sync.rs` asserts this
+on every call, so a refactor that broke it would fail every sync test at once
+(ADR-041).
 
 ## What the user sees
 

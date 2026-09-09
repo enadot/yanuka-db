@@ -49,3 +49,19 @@ test('settings reach the notebooks and the sync card on a phone', async ({ page 
   await page.getByRole('link', { name: 'מחברות' }).click();
   await expect(page.getByRole('heading', { name: /מחברות/ })).toBeVisible();
 });
+
+test('the add button saves a contact with no network', async ({ page, context }) => {
+  // The offline guarantee on the phone layout (ADR-041); the desktop layout is
+  // covered in offline.spec.ts. Offline only after the app has mounted.
+  await page.goto('/');
+  await expect(page.getByTestId('mobile-new-contact')).toBeVisible();
+  await context.setOffline(true);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+
+  await page.getByTestId('mobile-new-contact').click();
+  await page.getByLabel('שם מלא *').fill('לאה בלי רשת');
+  await page.getByRole('button', { name: 'הוספת איש קשר' }).click();
+  await expect(page.getByRole('heading', { name: /לאה בלי רשת/ })).toBeVisible();
+
+  await context.setOffline(false);
+});

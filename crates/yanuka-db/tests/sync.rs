@@ -24,36 +24,69 @@ fn hub() -> Hub {
 }
 
 /// A device's line to the server.
-struct Wire {
+struct Wire<'a> {
     hub: Hub,
+    /// The device's own database, watched but never used: see
+    /// `assert_database_released`.
+    client: &'a RefCell<yanuka_db::rusqlite::Connection>,
     device: String,
     revoked: Cell<bool>,
+    /// The server cannot be reached at all — no network, not a refusal.
+    offline: Cell<bool>,
 }
 
-impl Wire {
-    fn new(hub: &Hub, client: &RefCell<yanuka_db::rusqlite::Connection>) -> Self {
+impl<'a> Wire<'a> {
+    fn new(hub: &Hub, client: &'a RefCell<yanuka_db::rusqlite::Connection>) -> Self {
         let device = repository::device_id(&client.borrow()).unwrap();
-        Self { hub: hub.clone(), device, revoked: Cell::new(false) }
+        Self {
+            hub: hub.clone(),
+            client,
+            device,
+            revoked: Cell::new(false),
+            offline: Cell::new(false),
+        }
     }
-}
 
-impl Transport for Wire {
-    fn push(&self, items: &[PushItem]) -> yanuka_db::Result<Vec<PushResult>> {
+    /// The promise docs/SYNC.md makes: the engine never holds the database
+    /// while the transport is on the wire, so a save is never queued behind
+    /// a slow link (ADR-041). With a `RefCell` this is deterministic — a
+    /// borrow still alive here means `run_cycle` called us from inside
+    /// `with()` — and every test in this file checks it on every call.
+    fn assert_database_released(&self) {
+        assert!(
+            self.client.try_borrow_mut().is_ok(),
+            "the engine must not hold the database while the transport is on the wire"
+        );
+    }
+
+    fn gate(&self) -> yanuka_db::Result<()> {
+        self.assert_database_released();
+        if self.offline.get() {
+            return Err(DbError::Sync("אין רשת".into()));
+        }
         if self.revoked.get() {
             return Err(DbError::Unauthorized);
         }
+        Ok(())
+    }
+}
+
+impl Transport for Wire<'_> {
+    fn push(&self, items: &[PushItem]) -> yanuka_db::Result<Vec<PushResult>> {
+        self.gate()?;
         hub::accept(&mut self.hub.borrow_mut(), &self.device, items)
     }
 
     fn pull(&self, after: i64, limit: usize) -> yanuka_db::Result<PullPage> {
-        if self.revoked.get() {
-            return Err(DbError::Unauthorized);
-        }
+        self.gate()?;
         hub::pull(&self.hub.borrow(), after, limit, &self.device)
     }
 }
 
-fn cycle(client: &RefCell<yanuka_db::rusqlite::Connection>, wire: &Wire) -> engine::CycleReport {
+fn cycle(
+    client: &RefCell<yanuka_db::rusqlite::Connection>,
+    wire: &Wire<'_>,
+) -> engine::CycleReport {
     sync::run_cycle(client, wire, None).expect("cycle")
 }
 
@@ -523,4 +556,140 @@ fn disconnecting_forgets_the_server_but_keeps_every_record_and_its_history() {
     assert!(!yanuka_db::mutation::history(&a.borrow(), Some(&id), 10).unwrap().is_empty());
     // A later pairing starts from "the server has never seen this".
     assert_eq!(engine::dirty(&a.borrow()).unwrap().len(), 1);
+}
+
+#[test]
+fn a_cycle_that_cannot_reach_the_server_leaves_local_work_untouched() {
+    let hub = hub();
+    let a = db();
+    let wire_a = Wire::new(&hub, &a);
+    let first = repository::create_contact(&mut a.borrow_mut(), &contact("אסתר גולן", "1"), None)
+        .unwrap()
+        .contact
+        .id;
+
+    // No network: the cycle fails, says so, and leaves nothing half-done.
+    wire_a.offline.set(true);
+    let error = sync::run_cycle(&a, &wire_a, None).unwrap_err();
+    assert!(matches!(error, DbError::Sync(_)), "{error:?}");
+    let status = sync::config::status(&a.borrow()).unwrap();
+    assert!(!status["lastError"].as_str().unwrap_or_default().is_empty());
+    assert!(a.borrow().is_autocommit(), "no transaction leaked out of the failed cycle");
+    assert_eq!(pending(&a), 1, "the unsent change is still waiting, not lost");
+
+    // Offline is the archive's normal day: adding and editing go on as before.
+    let second = repository::create_contact(&mut a.borrow_mut(), &contact("יונה שפירא", "2"), None)
+        .unwrap()
+        .contact
+        .id;
+    {
+        let mut conn = a.borrow_mut();
+        let current = repository::get_contact(&conn, &first).unwrap().unwrap();
+        let mut input = contact("אסתר גולן", "1");
+        input.city = Some("צפת".into());
+        repository::update_contact(&mut conn, &first, &input, Some(current.contact.version))
+            .unwrap();
+    }
+    let on_a = repository::get_contact(&a.borrow(), &first).unwrap().unwrap();
+    assert_eq!(on_a.contact.city.as_deref(), Some("צפת"));
+    assert!(repository::get_contact(&a.borrow(), &second).unwrap().is_some());
+    assert!(pending(&a) > 1, "the offline edits are journaled for later");
+    let error = sync::run_cycle(&a, &wire_a, None).unwrap_err();
+    assert!(matches!(error, DbError::Sync(_)), "still offline, still failing cleanly");
+
+    // The day the link is back, everything goes up in one cycle.
+    wire_a.offline.set(false);
+    let report = cycle(&a, &wire_a);
+    assert_eq!(report.pushed, 2, "two records, whatever the number of edits: {report:?}");
+    assert_eq!(report.rejected, 0);
+    assert_eq!(pending(&a), 0);
+    let status = sync::config::status(&a.borrow()).unwrap();
+    assert!(status["lastError"].is_null(), "the error clears with the next good cycle");
+}
+
+#[test]
+fn the_engine_releases_the_database_before_every_network_call() {
+    let hub = hub();
+    let a = db();
+    let b = db();
+    let wire_a = Wire::new(&hub, &a);
+    let wire_b = Wire::new(&hub, &b);
+
+    // More records than one push chunk (100) and one pull page (200), so
+    // every round of both loops runs — and the wire checks, on each call,
+    // that the device's database is free while it is on the line.
+    {
+        let mut conn = a.borrow_mut();
+        for i in 0..250 {
+            repository::create_contact(
+                &mut conn,
+                &contact(&format!("איש {i}"), &format!("{i}")),
+                None,
+            )
+            .unwrap();
+        }
+    }
+    let report = cycle(&a, &wire_a);
+    assert_eq!(report.pushed, 250, "{report:?}");
+    assert_eq!(report.rejected, 0);
+
+    let report = cycle(&b, &wire_b);
+    assert_eq!(report.pulled, 250, "two pages: {report:?}");
+    assert_eq!(report.applied, 250);
+    let on_b: i64 =
+        b.borrow().query_row("SELECT COUNT(*) FROM contacts", [], |row| row.get(0)).unwrap();
+    assert_eq!(on_b, 250);
+}
+
+#[test]
+fn a_record_held_by_a_conflict_can_still_be_edited_offline() {
+    let hub = hub();
+    let a = db();
+    let b = db();
+    let wire_a = Wire::new(&hub, &a);
+    let wire_b = Wire::new(&hub, &b);
+    let id = repository::create_contact(&mut a.borrow_mut(), &contact("נעמי אדלר", "050-0"), None)
+        .unwrap()
+        .contact
+        .id;
+    cycle(&a, &wire_a);
+    cycle(&b, &wire_b);
+
+    let edit_phone = |client: &RefCell<yanuka_db::rusqlite::Connection>, phone: &str| {
+        let mut conn = client.borrow_mut();
+        let current = repository::get_contact(&conn, &id).unwrap().unwrap();
+        repository::update_contact(
+            &mut conn,
+            &id,
+            &contact("נעמי אדלר", phone),
+            Some(current.contact.version),
+        )
+        .unwrap();
+    };
+    edit_phone(&a, "054-1111111");
+    edit_phone(&b, "052-2222222");
+    cycle(&a, &wire_a);
+    let report = cycle(&b, &wire_b);
+    assert_eq!(report.conflicts, 1, "{report:?}");
+
+    // Nobody is there to settle it, and the record is needed now: B keeps
+    // working on it. The edit lands locally and waits with the conflict.
+    edit_phone(&b, "052-9999999");
+    assert_eq!(phone_of(&b, &id), vec!["052-9999999"]);
+    let report = cycle(&b, &wire_b);
+    assert_eq!(report.pushed, 0, "held until a person decides: {report:?}");
+    assert_eq!(open_conflicts(&b), 1);
+    assert_eq!(phone_of(&a, &id), vec!["054-1111111"], "A never sees the held edits");
+
+    // The person looks at the card as it stands and says: this is right.
+    let open = conflicts::list(&b.borrow()).unwrap();
+    let conflict_id = open[0]["id"].as_str().unwrap().to_string();
+    conflicts::resolve(&mut b.borrow_mut(), &conflict_id, "manual").unwrap();
+    assert_eq!(open_conflicts(&b), 0);
+    let report = cycle(&b, &wire_b);
+    assert_eq!(report.pushed, 1, "the record goes up as it stands: {report:?}");
+    assert_eq!(report.conflicts, 0);
+    cycle(&a, &wire_a);
+    assert_eq!(phone_of(&a, &id), vec!["052-9999999"]);
+    assert_eq!(open_conflicts(&a), 0);
 }
